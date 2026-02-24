@@ -14,6 +14,7 @@
   register: docker_info
   changed_when: false
   failed_when: docker_info.rc != 0
+  become: false
 
 - name: Display Docker Info
   debug:
@@ -26,6 +27,7 @@
   register: brew_check
   changed_when: false
   failed_when: false
+  become: false
 
 - name: Warn if Homebrew Missing
   debug:
@@ -39,6 +41,7 @@
   register: tailscale_check
   changed_when: false
   failed_when: false
+  become: false
 
 - name: Install Tailscale via Homebrew
   command: brew install --cask tailscale
@@ -54,6 +57,7 @@
   register: compose_check
   changed_when: false
   failed_when: false
+  become: false
 
 - name: Fail if docker compose not Available
   fail:
