@@ -14,21 +14,5 @@
 All skills follow: `uv run python .claude/skills/<name>/<name>.py <subcommand> [args]`
 Use `--help` on any script for available subcommands.
 
-## Web Search
-- Do NOT use the built-in `web_search` — it requires API keys that are not configured.
-- Use this command instead (SearXNG, self-hosted, no API key needed):
-  ```bash
-  curl -s 'http://localhost:8888/search?q=QUERY&format=json' | python3 -c "
-  import sys, json
-  r = json.load(sys.stdin)
-  for x in r.get('results', [])[:5]:
-      print(x['title'])
-      print(x['url'])
-      print(x.get('content','')[:200])
-      print()
-  "
-  ```
-- Replace `QUERY` with URL-encoded search terms (spaces as `+`).
-
 ## Project Root
 ALHAZEN_PROJECT_ROOT = ${PROJECT_ROOT}
