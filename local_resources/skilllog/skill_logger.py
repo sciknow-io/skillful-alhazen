@@ -58,6 +58,36 @@ def estimate_tokens(text: str) -> int:
         return max(1, len(text) // 4)
 
 
+def estimate_context_tokens() -> dict:
+    """Estimate tokens in always-loaded context files."""
+    context_files = {
+        "claude_md": PROJECT_ROOT / "CLAUDE.md",
+        "soul_md": PROJECT_ROOT / "local_resources/openclaw/SOUL.md",
+        "agents_md": PROJECT_ROOT / "local_resources/openclaw/AGENTS.md",
+        "memory_md": Path.home() / ".claude/projects/-Users-gullyburns-skillful-alhazen/memory/MEMORY.md",
+    }
+    # Also scan local_skills/*/SKILL.md
+    skill_md_total = 0
+    local_skills_dir = PROJECT_ROOT / "local_skills"
+    if local_skills_dir.exists():
+        for skill_md in local_skills_dir.glob("*/SKILL.md"):
+            try:
+                skill_md_total += estimate_tokens(skill_md.read_text(errors="replace"))
+            except OSError:
+                pass
+
+    totals = {}
+    for name, path in context_files.items():
+        if path.exists():
+            try:
+                totals[name] = estimate_tokens(path.read_text(errors="replace"))
+            except OSError:
+                pass
+    totals["skill_mds"] = skill_md_total
+    totals["total"] = sum(totals.values())
+    return totals
+
+
 # ---------------------------------------------------------------------------
 # Skill detection
 # ---------------------------------------------------------------------------
@@ -84,23 +114,28 @@ def detect_skill_invocation(command: str) -> Optional[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# TypeDB helpers
+# TypeDB helpers (TypeDB 3.x)
 # ---------------------------------------------------------------------------
 
 def get_typedb_connection():
-    """Return (client, session) connected to the configured TypeDB database."""
+    """Return (driver, database) connected to the configured TypeDB database."""
     try:
-        from typedb.driver import TypeDB, SessionType, TransactionType
+        from typedb.driver import TypeDB, Credentials, DriverOptions, TransactionType
     except ImportError:
         raise RuntimeError("typedb-driver is not installed. Run: uv sync --all-extras")
 
     host = os.environ.get("TYPEDB_HOST", "localhost")
     port = int(os.environ.get("TYPEDB_PORT", "1729"))
     database = os.environ.get("TYPEDB_DATABASE", "alhazen_notebook")
+    username = os.environ.get("TYPEDB_USERNAME", "admin")
+    password = os.environ.get("TYPEDB_PASSWORD", "password")
 
-    client = TypeDB.core_driver(f"{host}:{port}")
-    session = client.session(database, SessionType.DATA)
-    return client, session
+    driver = TypeDB.driver(
+        f"{host}:{port}",
+        Credentials(username, password),
+        DriverOptions(is_tls_enabled=False),
+    )
+    return driver, database
 
 
 def generate_id(prefix: str) -> str:
@@ -172,6 +207,8 @@ def run_hook():
     input_tokens = estimate_tokens(command)
     output_tokens = estimate_tokens(output_text)
     total_tokens = input_tokens + output_tokens
+    ctx = estimate_context_tokens()
+    context_tokens = ctx.get("total", 0)
     timestamp = get_timestamp()
     session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
 
@@ -180,12 +217,13 @@ def run_hook():
     output_id = generate_id("skilllog-out")
 
     try:
-        client, session = get_typedb_connection()
         from typedb.driver import TransactionType
 
-        with session.transaction(TransactionType.WRITE) as tx:
+        driver, database = get_typedb_connection()
+
+        with driver.transaction(database, TransactionType.WRITE) as tx:
             # Insert invocation entity
-            tx.query.insert(f"""
+            tx.query(f"""
                 insert $inv isa skilllog-invocation,
                     has id "{invocation_id}",
                     has name "{escape_string(f'{skill_name}:{cmd_name}')}",
@@ -196,13 +234,14 @@ def run_hook():
                     has input-tokens-estimate {input_tokens},
                     has output-tokens-estimate {output_tokens},
                     has total-tokens-estimate {total_tokens},
+                    has context-tokens-estimate {context_tokens},
                     has evaluation-label "unlabeled",
                     has created-at {timestamp},
                     has provenance "skilllog-hook";
-            """)
+            """).resolve()
 
             # Insert input artifact (store inline — commands are always small)
-            tx.query.insert(f"""
+            tx.query(f"""
                 insert $art isa skilllog-input,
                     has id "{input_id}",
                     has name "input:{invocation_id}",
@@ -210,11 +249,11 @@ def run_hook():
                     has format "bash",
                     has created-at {timestamp},
                     has provenance "skilllog-hook";
-            """)
+            """).resolve()
 
             # Insert output artifact (truncate if very large)
             truncated_output = output_text[:8000] if len(output_text) > 8000 else output_text
-            tx.query.insert(f"""
+            tx.query(f"""
                 insert $art isa skilllog-output,
                     has id "{output_id}",
                     has name "output:{invocation_id}",
@@ -222,28 +261,27 @@ def run_hook():
                     has format "text",
                     has created-at {timestamp},
                     has provenance "skilllog-hook";
-            """)
+            """).resolve()
 
             # Link input artifact to invocation via representation relation
-            tx.query.insert(f"""
+            tx.query(f"""
                 match
                     $inv isa skilllog-invocation, has id "{invocation_id}";
                     $art isa skilllog-input, has id "{input_id}";
                 insert (referent: $inv, artifact: $art) isa representation;
-            """)
+            """).resolve()
 
             # Link output artifact to invocation
-            tx.query.insert(f"""
+            tx.query(f"""
                 match
                     $inv isa skilllog-invocation, has id "{invocation_id}";
                     $art isa skilllog-output, has id "{output_id}";
                 insert (referent: $inv, artifact: $art) isa representation;
-            """)
+            """).resolve()
 
             tx.commit()
 
-        session.close()
-        client.close()
+        driver.close()
 
     except Exception as e:
         if error_on_typedb_unavailable():
@@ -254,19 +292,19 @@ def run_hook():
 
 
 # ---------------------------------------------------------------------------
-# CLI subcommands (Task #5)
+# CLI subcommands
 # ---------------------------------------------------------------------------
 
 def cmd_list_invocations(args):
     """List recent skill invocations from TypeDB."""
     try:
-        client, session = get_typedb_connection()
         from typedb.driver import TransactionType
 
+        driver, database = get_typedb_connection()
         skill_filter = f', has skill-name "{args.skill}"' if args.skill else ""
         limit = args.limit if hasattr(args, "limit") and args.limit else 50
 
-        with session.transaction(TransactionType.READ) as tx:
+        with driver.transaction(database, TransactionType.READ) as tx:
             query = f"""
                 match $inv isa skilllog-invocation{skill_filter},
                     has id $id,
@@ -275,23 +313,29 @@ def cmd_list_invocations(args):
                     has total-tokens-estimate $tokens,
                     has evaluation-label $label,
                     has created-at $ts;
-                fetch $id; $skill; $cmd; $tokens; $label; $ts;
                 limit {limit};
+                fetch {{
+                    "id": $id,
+                    "skill": $skill,
+                    "cmd": $cmd,
+                    "tokens": $tokens,
+                    "label": $label,
+                    "ts": $ts
+                }};
             """
-            results = list(tx.query.fetch(query))
+            results = list(tx.query(query).resolve())
 
-        session.close()
-        client.close()
+        driver.close()
 
         rows = []
         for r in results:
             rows.append({
-                "id": r["id"]["value"],
-                "skill": r["skill"]["value"],
-                "command": r["cmd"]["value"],
-                "tokens": r["tokens"]["value"],
-                "label": r["label"]["value"],
-                "timestamp": r["ts"]["value"],
+                "id": r["id"],
+                "skill": r["skill"],
+                "command": r["cmd"],
+                "tokens": r["tokens"],
+                "label": r["label"],
+                "timestamp": r["ts"],
             })
 
         print(json.dumps(rows, indent=2))
@@ -302,44 +346,68 @@ def cmd_list_invocations(args):
 
 
 def cmd_token_report(args):
-    """Summarize token usage by skill and command."""
+    """Summarize token usage by skill and command, with static context baseline."""
     try:
-        client, session = get_typedb_connection()
         from typedb.driver import TransactionType
 
+        driver, database = get_typedb_connection()
         skill_filter = f', has skill-name "{args.skill}"' if args.skill else ""
 
-        with session.transaction(TransactionType.READ) as tx:
+        with driver.transaction(database, TransactionType.READ) as tx:
             query = f"""
                 match $inv isa skilllog-invocation{skill_filter},
                     has skill-name $skill,
                     has command-name $cmd,
-                    has total-tokens-estimate $tokens;
-                fetch $skill; $cmd; $tokens;
+                    has total-tokens-estimate $tokens,
+                    has context-tokens-estimate $ctx;
+                fetch {{
+                    "skill": $skill,
+                    "cmd": $cmd,
+                    "tokens": $tokens,
+                    "ctx": $ctx
+                }};
             """
-            results = list(tx.query.fetch(query))
+            results = list(tx.query(query).resolve())
 
-        session.close()
-        client.close()
+        driver.close()
 
         # Aggregate
         from collections import defaultdict
-        skill_totals: dict = defaultdict(lambda: {"total": 0, "count": 0, "commands": defaultdict(lambda: {"total": 0, "count": 0})})
+        skill_totals: dict = defaultdict(lambda: {
+            "total": 0, "count": 0, "ctx_total": 0,
+            "commands": defaultdict(lambda: {"total": 0, "count": 0, "ctx_total": 0})
+        })
 
         for r in results:
-            skill = r["skill"]["value"]
-            cmd = r["cmd"]["value"]
-            tokens = r["tokens"]["value"]
+            skill = r["skill"]
+            cmd = r["cmd"]
+            tokens = r["tokens"]
+            ctx = r.get("ctx", 0) or 0
             skill_totals[skill]["total"] += tokens
             skill_totals[skill]["count"] += 1
+            skill_totals[skill]["ctx_total"] += ctx
             skill_totals[skill]["commands"][cmd]["total"] += tokens
             skill_totals[skill]["commands"][cmd]["count"] += 1
+            skill_totals[skill]["commands"][cmd]["ctx_total"] += ctx
 
-        print("\nToken Usage Report")
+        # Show static context baseline from current filesystem
+        current_ctx = estimate_context_tokens()
+        print("\nStatic Context Baseline (current filesystem)")
         print("=" * 60)
+        for name, tokens in current_ctx.items():
+            if name != "total":
+                print(f"  {name:<30} {tokens:>8,} tokens")
+        print(f"  {'TOTAL':<30} {current_ctx['total']:>8,} tokens")
+
+        print("\nToken Usage Report (CLI I/O estimates)")
+        print("=" * 60)
+        if not skill_totals:
+            print("  No invocations logged yet.")
         for skill, data in sorted(skill_totals.items(), key=lambda x: -x[1]["total"]):
             avg = data["total"] // data["count"] if data["count"] else 0
-            print(f"\n{skill}: {data['total']:,} tokens total ({data['count']} calls, avg {avg:,})")
+            avg_ctx = data["ctx_total"] // data["count"] if data["count"] else 0
+            print(f"\n{skill}: {data['total']:,} CLI tokens total ({data['count']} calls, avg {avg:,})")
+            print(f"  Static context at invocation time: avg {avg_ctx:,} tokens/call")
             for cmd, cdata in sorted(data["commands"].items(), key=lambda x: -x[1]["total"]):
                 cavg = cdata["total"] // cdata["count"] if cdata["count"] else 0
                 print(f"  {cmd:<30} {cdata['total']:>8,} tokens  ({cdata['count']} calls, avg {cavg:,})")
@@ -354,25 +422,109 @@ def cmd_label(args):
     label = "golden" if args.golden else ("rejected" if args.rejected else "unlabeled")
 
     try:
-        client, session = get_typedb_connection()
         from typedb.driver import TransactionType
 
-        with session.transaction(TransactionType.WRITE) as tx:
+        driver, database = get_typedb_connection()
+
+        with driver.transaction(database, TransactionType.WRITE) as tx:
             # Delete old label
-            tx.query.delete(f"""
+            tx.query(f"""
                 match $inv isa skilllog-invocation, has id "{args.id}", has evaluation-label $old;
-                delete $inv has evaluation-label $old;
-            """)
+                delete has $old;
+            """).resolve()
             # Insert new label
-            tx.query.insert(f"""
+            tx.query(f"""
                 match $inv isa skilllog-invocation, has id "{args.id}";
                 insert $inv has evaluation-label "{label}";
-            """)
+            """).resolve()
             tx.commit()
 
-        session.close()
-        client.close()
+        driver.close()
         print(json.dumps({"success": True, "id": args.id, "label": label}))
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_token_report_llm(args):
+    """Summarize real LLM token usage logged by the LiteLLM callback (OpenClaw)."""
+    try:
+        from typedb.driver import TransactionType
+        from collections import defaultdict
+
+        driver, database = get_typedb_connection()
+
+        with driver.transaction(database, TransactionType.READ) as tx:
+            query = """
+                match $c isa skilllog-llm-call,
+                    has llm-model $model,
+                    has input-tokens-estimate $in_tok,
+                    has output-tokens-estimate $out_tok,
+                    has cache-creation-tokens $cc_tok,
+                    has cache-read-tokens $cr_tok,
+                    has cost-usd $cost,
+                    has duration-ms $dur,
+                    has exit-code $exit;
+                fetch {
+                    "model":    $model,
+                    "in_tok":   $in_tok,
+                    "out_tok":  $out_tok,
+                    "cc_tok":   $cc_tok,
+                    "cr_tok":   $cr_tok,
+                    "cost":     $cost,
+                    "dur":      $dur,
+                    "exit":     $exit
+                };
+            """
+            results = list(tx.query(query).resolve())
+
+        driver.close()
+
+        if not results:
+            print("No LLM calls logged yet.")
+            return
+
+        total_calls = len(results)
+        total_in    = sum(r["in_tok"] for r in results)
+        total_out   = sum(r["out_tok"] for r in results)
+        total_cc    = sum(r["cc_tok"] for r in results)
+        total_cr    = sum(r["cr_tok"] for r in results)
+        total_cost  = sum(r["cost"] for r in results)
+        errors      = sum(1 for r in results if r["exit"] != 0)
+
+        # Cache hit ratio: cache_read / (input + cache_read) avoids div-by-zero
+        denom = total_in + total_cr
+        cache_ratio = (total_cr / denom * 100) if denom else 0.0
+
+        # Savings: tokens served from cache at ~10% of input rate
+        # Rough estimate: saved = cache_read * (input_rate - cache_read_rate)
+        saved_usd = total_cr * (3.0 - 0.30) / 1_000_000
+
+        print("\nLLM Call Report (OpenClaw via LiteLLM)")
+        print("=" * 60)
+        print(f"  Total calls:          {total_calls:>8,}")
+        print(f"  Errors:               {errors:>8,}")
+        print(f"  Total cost:           ${total_cost:>11.4f}")
+        print(f"  Cache savings est.:  ~${saved_usd:>11.4f}")
+        print(f"  Input tokens:         {total_in:>8,}")
+        print(f"  Output tokens:        {total_out:>8,}")
+        print(f"  Cache create tokens:  {total_cc:>8,}")
+        print(f"  Cache read tokens:    {total_cr:>8,}  ({cache_ratio:.1f}% of input+read)")
+
+        # Aggregate by model
+        by_model: dict = defaultdict(lambda: {"calls": 0, "cost": 0.0, "in": 0, "out": 0})
+        for r in results:
+            m = r["model"]
+            by_model[m]["calls"] += 1
+            by_model[m]["cost"]  += r["cost"]
+            by_model[m]["in"]    += r["in_tok"]
+            by_model[m]["out"]   += r["out_tok"]
+
+        if len(by_model) > 1:
+            print("\nBy model:")
+            for model, d in sorted(by_model.items(), key=lambda x: -x[1]["cost"]):
+                print(f"  {model:<35} {d['calls']:>5} calls  ${d['cost']:.4f}")
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -382,12 +534,12 @@ def cmd_label(args):
 def cmd_export_golden(args):
     """Export golden invocations as JSON for TextGrad consumption."""
     try:
-        client, session = get_typedb_connection()
         from typedb.driver import TransactionType
 
+        driver, database = get_typedb_connection()
         skill_filter = f', has skill-name "{args.skill}"' if args.skill else ""
 
-        with session.transaction(TransactionType.READ) as tx:
+        with driver.transaction(database, TransactionType.READ) as tx:
             # Get golden invocations
             query = f"""
                 match $inv isa skilllog-invocation{skill_filter},
@@ -396,45 +548,49 @@ def cmd_export_golden(args):
                     has command-name $cmd,
                     has evaluation-label "golden",
                     has created-at $ts;
-                fetch $id; $skill; $cmd; $ts;
+                fetch {{
+                    "id": $id,
+                    "skill": $skill,
+                    "cmd": $cmd,
+                    "ts": $ts
+                }};
             """
-            inv_results = list(tx.query.fetch(query))
+            inv_results = list(tx.query(query).resolve())
 
             records = []
             for r in inv_results:
-                inv_id = r["id"]["value"]
+                inv_id = r["id"]
 
                 # Get input artifact
                 in_q = f"""
                     match $inv isa skilllog-invocation, has id "{inv_id}";
                         $art isa skilllog-input, has content $c;
                         (referent: $inv, artifact: $art) isa representation;
-                    fetch $c;
+                    fetch {{ "c": $c }};
                 """
-                in_res = list(tx.query.fetch(in_q))
-                input_content = in_res[0]["c"]["value"] if in_res else ""
+                in_res = list(tx.query(in_q).resolve())
+                input_content = in_res[0]["c"] if in_res else ""
 
                 # Get output artifact
                 out_q = f"""
                     match $inv isa skilllog-invocation, has id "{inv_id}";
                         $art isa skilllog-output, has content $c;
                         (referent: $inv, artifact: $art) isa representation;
-                    fetch $c;
+                    fetch {{ "c": $c }};
                 """
-                out_res = list(tx.query.fetch(out_q))
-                output_content = out_res[0]["c"]["value"] if out_res else ""
+                out_res = list(tx.query(out_q).resolve())
+                output_content = out_res[0]["c"] if out_res else ""
 
                 records.append({
                     "id": inv_id,
-                    "skill": r["skill"]["value"],
-                    "command": r["cmd"]["value"],
-                    "timestamp": r["ts"]["value"],
+                    "skill": r["skill"],
+                    "command": r["cmd"],
+                    "timestamp": r["ts"],
                     "input": input_content,
                     "output": output_content,
                 })
 
-        session.close()
-        client.close()
+        driver.close()
 
         output = json.dumps(records, indent=2)
         if args.output:
@@ -483,6 +639,10 @@ def main():
     label_group.add_argument("--rejected", action="store_true", help="Mark as rejected")
     label_group.add_argument("--unlabeled", action="store_true", help="Reset to unlabeled")
     p_label.set_defaults(func=cmd_label)
+
+    # token-report-llm
+    p_llm = sub.add_parser("token-report-llm", help="Real LLM token usage from OpenClaw (LiteLLM callback)")
+    p_llm.set_defaults(func=cmd_token_report_llm)
 
     # export-golden
     p_export = sub.add_parser("export-golden", help="Export golden invocations for TextGrad")

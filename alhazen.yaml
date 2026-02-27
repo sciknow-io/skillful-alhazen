@@ -9,7 +9,7 @@
 
 monitoring:
   # Set to true to activate PostToolUse logging hook (requires TypeDB running)
-  enabled: false
+  enabled: true
   # Raise an error if TypeDB is unavailable when logging fires
   error_on_typedb_unavailable: true
 
