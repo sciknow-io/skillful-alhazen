@@ -10,6 +10,7 @@ services:
     env_file: litellm.env
     environment:
       - LITELLM_LOG=INFO
+      - MCP_LOG_URL=http://alhazen-mcp:3000/log-llm-call
     ports:
       - "127.0.0.1:4000:4000"
     networks:
@@ -17,6 +18,7 @@ services:
       - openclaw-external
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
+      - {{ repo_dir }}/local_resources/skilllog/litellm_callback.py:/app/litellm_callback.py:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -147,7 +149,8 @@ services:
           /schema/namespaces/scilit.tql \
           /schema/namespaces/jobhunt.tql \
           /schema/namespaces/apm.tql \
-          /schema/namespaces/techrecon.tql
+          /schema/namespaces/techrecon.tql \
+          /schema/namespaces/skilllog.tql
     networks:
       - openclaw-internal
     restart: "no"
