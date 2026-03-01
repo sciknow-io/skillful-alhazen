@@ -16,6 +16,7 @@ TYPEDB_DATABASE := alhazen_notebook
 TYPEDB_SCHEMAS_DIR := $(PROJECT_ROOT)/local_resources/typedb
 LOCAL_SKILLS_DIR := $(PROJECT_ROOT)/local_skills
 SKILLS_REGISTRY := $(PROJECT_ROOT)/skills-registry.yaml
+SKILL_LIBRARY ?=  # override: make build-skills SKILL_LIBRARY=https://github.com/MyOrg/fork
 
 # OS detection
 UNAME_S := $(shell uname -s)
@@ -445,13 +446,17 @@ skills-validate: ## Validate all resolved skills have SKILL.md with name: field
 	fi
 
 define SKILLS_INSTALL_PY
-import subprocess, sys, shutil
+import os, subprocess, sys, shutil
 from pathlib import Path
 import yaml
 registry = Path('skills-registry.yaml')
 if not registry.exists():
     print('No skills-registry.yaml found'); sys.exit(0)
 cfg = yaml.safe_load(registry.read_text()) or {}
+defaults = cfg.get('defaults') or {}
+# Allow env var or make-var override of the skill library URL
+skill_library = os.environ.get('ALHAZEN_SKILL_LIBRARY') or defaults.get('git', '')
+default_ref = defaults.get('ref', 'main')
 skills = cfg.get('skills') or []
 if not skills:
     print('No skills registered in skills-registry.yaml'); sys.exit(0)
@@ -470,8 +475,11 @@ for skill in skills:
         print(f'  ✓ Linked (core): {name}')
         continue
     # External skill: clone from git
-    git_url = skill['git']
-    ref = skill.get('ref', 'main'); subdir = skill.get('subdir', '.')
+    git_url = skill.get('git') or skill_library
+    ref = skill.get('ref') or default_ref
+    subdir = skill.get('subdir', '.')
+    if not git_url:
+        print(f'  ✗ No git URL for {name} and no defaults.git set', file=sys.stderr); continue
     if target.exists() and not target.is_symlink():
         print(f'  Skipping {name} (already installed -- run make skills-update to refresh)'); continue
     if target.is_symlink():
@@ -490,13 +498,16 @@ endef
 export SKILLS_INSTALL_PY
 
 define SKILLS_UPDATE_PY
-import subprocess, sys, shutil
+import os, subprocess, sys, shutil
 from pathlib import Path
 import yaml
 registry = Path('skills-registry.yaml')
 if not registry.exists():
     print('No skills-registry.yaml found'); sys.exit(0)
 cfg = yaml.safe_load(registry.read_text()) or {}
+defaults = cfg.get('defaults') or {}
+skill_library = os.environ.get('ALHAZEN_SKILL_LIBRARY') or defaults.get('git', '')
+default_ref = defaults.get('ref', 'main')
 skills = cfg.get('skills') or []
 if not skills:
     print('No skills registered'); sys.exit(0)
@@ -513,8 +524,11 @@ for skill in skills:
         print(f'  ✓ Re-linked (core): {name}')
         continue
     # External skill: re-clone from git
-    git_url = skill['git']
-    ref = skill.get('ref', 'main'); subdir = skill.get('subdir', '.')
+    git_url = skill.get('git') or skill_library
+    ref = skill.get('ref') or default_ref
+    subdir = skill.get('subdir', '.')
+    if not git_url:
+        print(f'  ✗ No git URL for {name} and no defaults.git set', file=sys.stderr); continue
     print(f'  Updating {name}...')
     if target.is_symlink(): target.unlink()
     elif target.exists(): shutil.rmtree(target)
@@ -533,13 +547,13 @@ export SKILLS_UPDATE_PY
 .PHONY: skills-install
 skills-install: ## Resolve skills-registry.yaml into local_skills/ (path: symlinks, git: clones)
 	@echo "$(BLUE)Resolving skills from registry...$(NC)"
-	@uv run python -c "$$SKILLS_INSTALL_PY"
+	@$(if $(SKILL_LIBRARY),ALHAZEN_SKILL_LIBRARY=$(SKILL_LIBRARY)) uv run python -c "$$SKILLS_INSTALL_PY"
 	@echo "$(GREEN)✓ Skills resolved to local_skills/$(NC)"
 
 .PHONY: skills-update
 skills-update: ## Re-resolve all skills from registry (re-links core, re-clones external) and redeploy
 	@echo "$(BLUE)Updating all skills...$(NC)"
-	@uv run python -c "$$SKILLS_UPDATE_PY"
+	@$(if $(SKILL_LIBRARY),ALHAZEN_SKILL_LIBRARY=$(SKILL_LIBRARY)) uv run python -c "$$SKILLS_UPDATE_PY"
 	$(MAKE) --no-print-directory deploy-claude
 	@echo "$(GREEN)✓ All skills updated$(NC)"
 

@@ -1,12 +1,16 @@
 # Alhazen Skills Registry
 # ========================
-# Single source of truth for all skills — core (path-based) and external (git-based).
+# Single source of truth for all skills -- core (path-based) and external (git-based).
 #
 # Build all skills locally:
 #   make build-skills
 #
 # Update installed skills:
 #   make skills-update
+#
+# Override the skill library URL at build time:
+#   make build-skills SKILL_LIBRARY=https://github.com/MyOrg/my-skill-fork
+#   ALHAZEN_SKILL_LIBRARY=https://github.com/MyOrg/my-skill-fork make build-skills
 #
 # Skills resolve to local_skills/ (gitignored build artifact).
 #
@@ -16,21 +20,30 @@
 #     - name: my-skill
 #       path: skills/my-skill       # path relative to repo root
 #
-#   External skills (cloned from a git repository):
+#   External skills from the default skill library (inherits defaults.git + defaults.ref):
 #     - name: my-skill
-#       git: https://...            # git clone URL
-#       ref: main                   # branch, tag, or commit hash (default: main)
+#       subdir: skills/category/my-skill
+#
+#   External skills from a custom git repository:
+#     - name: my-skill
+#       git: https://...            # overrides defaults.git
+#       ref: main                   # overrides defaults.ref (default: main)
 #       subdir: .                   # subdirectory within the repo (default: .)
 #
 # Each skill directory must contain:
 #   - SKILL.md     (required: Claude Code skill definition)
 #   - skill.yaml   (recommended: structured metadata)
 #   - {name}.py    (recommended: CLI entry point)
-#   - schema.tql   (optional: TypeDB schema extension — loaded by make build-db)
+#   - schema.tql   (optional: TypeDB schema extension -- loaded by make build-db)
 #   - dashboard/   (optional: Next.js dashboard components)
 
+# Default skill library -- override with ALHAZEN_SKILL_LIBRARY env var or SKILL_LIBRARY make var
+defaults:
+  git: https://github.com/GullyBurns/alhazen-skill-examples
+  ref: main
+
 skills:
-  # ── Core skills (path-based: symlinked from skills/ in this repo) ──────────
+  # -- Core skills (path-based: symlinked from skills/ in this repo) ----------
   - name: typedb-notebook
     path: skills/typedb-notebook
 
@@ -40,33 +53,28 @@ skills:
   - name: domain-modeling
     path: skills/domain-modeling
 
-  # ── External skills (git-based: cloned from alhazen-skill-examples) ────────
+  # -- External skills (git-based: cloned from defaults.git) ------------------
   - name: jobhunt
-    git: https://github.com/GullyBurns/alhazen-skill-examples
-    ref: main
     subdir: skills/demo/jobhunt
 
   - name: techrecon
-    git: https://github.com/GullyBurns/alhazen-skill-examples
-    ref: main
     subdir: skills/demo/techrecon
 
   - name: epmc-search
-    git: https://github.com/GullyBurns/alhazen-skill-examples
-    ref: main
     subdir: skills/biomed/epmc-search
 
   - name: apm
-    git: https://github.com/GullyBurns/alhazen-skill-examples
-    ref: main
     subdir: skills/biomed/apm
 
   - name: rare-disease
-    git: https://github.com/GullyBurns/alhazen-skill-examples
-    ref: main
     subdir: skills/biomed/rare-disease
 
-# To add more external skills:
+# To add more skills from the default library:
+# - name: my-skill
+#   subdir: skills/category/my-skill
+#
+# To add a skill from a custom repository:
 # - name: semantic-scholar
 #   git: https://github.com/example/alhazen-semantic-scholar
 #   ref: main
+#   subdir: .
