@@ -69,6 +69,7 @@
     dest: "{{ repo_dir }}"
     version: "{{ deploy_branch | default('main') }}"
     update: yes
+    force: yes
   become: true
   become_user: "{{ openclaw_user }}"
 
@@ -221,6 +222,14 @@
     group: staff
     mode: '0600'
 
+- name: Copy LiteLLM Token Logging Callback
+  copy:
+    src: "{{ role_path }}/../../../local_resources/skilllog/litellm_callback.py"
+    dest: "{{ openclaw_home }}/litellm_callback.py"
+    owner: "{{ openclaw_user }}"
+    group: staff
+    mode: '0644'
+
 - name: Create LiteLLM Env (API keys)
   template:
     src: litellm.env.j2
@@ -338,6 +347,7 @@
     mode: '0644'
   loop:
     - { src: com.alhazen.litellm.plist.j2,  name: com.alhazen.litellm }
+    - { src: com.alhazen.mcp.plist.j2,      name: com.alhazen.mcp }
     - { src: com.alhazen.openclaw.plist.j2, name: com.alhazen.openclaw }
 
 - name: Unload Existing Services (if running)
@@ -351,6 +361,7 @@
   shell: launchctl load /Library/LaunchDaemons/{{ item }}.plist
   loop:
     - com.alhazen.litellm
+    - com.alhazen.mcp
     - com.alhazen.openclaw
 
 # --- Health Checks ---
@@ -372,3 +383,21 @@
 - name: Display Service Status
   debug:
     var: launchd_status.stdout_lines
+
+- name: Render OpenClaw Identity Files from TypeDB
+  shell: >
+    uv run python src/skillful_alhazen/utils/render_identity.py
+    --workspace /Users/{{ openclaw_user }}/workspace
+    render-all
+  args:
+    chdir: "{{ repo_dir }}"
+  become: true
+  become_user: "{{ openclaw_user }}"
+  environment:
+    HOME: "{{ openclaw_home }}"
+    PATH: "{{ macos_path }}"
+    TYPEDB_HOST: "localhost"
+    TYPEDB_PORT: "1729"
+    TYPEDB_DATABASE: "alhazen_notebook"
+    ALHAZEN_PROJECT_ROOT: "{{ repo_dir }}"
+  ignore_errors: true
