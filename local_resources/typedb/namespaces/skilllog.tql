@@ -1,14 +1,15 @@
 # =============================================================================
 # SKILLLOG NAMESPACE - TypeDB 3.x Schema
 # =============================================================================
-# Tracks skill invocations for token observability, evaluation, and TextGrad
-# optimization. Logs are written by the PostToolUse Claude Code hook.
+# Tracks skill invocations and LLM calls for token observability, evaluation,
+# and TextGrad optimization.
 #
 # Entity hierarchy:
 #   skilllog-session    → collection     (groups invocations in one Claude session)
-#   skilllog-invocation → domain-thing   (one skill command call)
+#   skilllog-invocation → domain-thing   (one skill command call, logged by Claude Code hook)
 #   skilllog-input      → artifact       (raw command + args)
 #   skilllog-output     → artifact       (raw stdout/stderr)
+#   skilllog-llm-call   → domain-thing   (one LLM API round-trip, logged by LiteLLM callback)
 # =============================================================================
 
 define
@@ -27,10 +28,24 @@ attribute duration-ms, value integer;
 attribute input-tokens-estimate, value integer;
 attribute output-tokens-estimate, value integer;
 attribute total-tokens-estimate, value integer;
+# Estimated tokens in always-loaded static context files (CLAUDE.md, SKILL.mds, etc.)
+attribute context-tokens-estimate, value integer;
+# Per-file breakdown of context tokens (stored since Feb 2026)
+attribute claude-md-tokens, value integer;
+attribute memory-md-tokens, value integer;
+attribute skill-mds-tokens, value integer;
+attribute soul-md-tokens, value integer;
+attribute agents-md-tokens, value integer;
 
 # Evaluation label for TextGrad dataset building
 # Values: unlabeled | golden | rejected
 attribute evaluation-label, value string;
+
+# LLM call tracking (LiteLLM callback → OpenClaw usage)
+attribute llm-model, value string;
+attribute cost-usd, value double;
+attribute cache-creation-tokens, value integer;
+attribute cache-read-tokens, value integer;
 
 
 # -----------------------------------------------------------------------------
@@ -53,6 +68,12 @@ entity skilllog-invocation sub domain-thing,
     owns input-tokens-estimate,
     owns output-tokens-estimate,
     owns total-tokens-estimate,
+    owns context-tokens-estimate,
+    owns claude-md-tokens,
+    owns memory-md-tokens,
+    owns skill-mds-tokens,
+    owns soul-md-tokens,
+    owns agents-md-tokens,
     owns evaluation-label;
 
 
@@ -62,3 +83,18 @@ entity skilllog-input sub artifact;
 
 # Raw stdout/stderr captured as output artifact.
 entity skilllog-output sub artifact;
+
+
+# One LLM API round-trip logged by the LiteLLM callback (OpenClaw production).
+# Written by local_resources/skilllog/litellm_callback.py via the MCP server's
+# /log-llm-call HTTP endpoint.
+entity skilllog-llm-call sub domain-thing,
+    owns llm-model,
+    owns session-id,
+    owns input-tokens-estimate,
+    owns output-tokens-estimate,
+    owns cache-creation-tokens,
+    owns cache-read-tokens,
+    owns cost-usd,
+    owns duration-ms,
+    owns exit-code;
