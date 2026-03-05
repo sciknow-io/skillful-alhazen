@@ -2,13 +2,20 @@
 
 ## The Curation Design Pattern
 
-All domain skills follow a 5-phase workflow:
+All domain skills follow a 6-phase workflow:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         CURATION WORKFLOW                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
+│  0. TASK DEFINITION                                                          │
+│  ┌──────────────────────────────────────────────────────┐                   │
+│  │ Define the goal or decision the curation is FOR      │                   │
+│  │ (name + description in natural language = task entity)│                  │
+│  └──────────────────────────────────────────────────────┘                   │
+│                              │                                               │
+│                              ▼                                               │
 │  1. FORAGING          2. INGESTION         3. SENSEMAKING                   │
 │  ┌──────────┐        ┌──────────┐         ┌──────────────┐                  │
 │  │ Discover │───────▶│  Capture │────────▶│ Claude reads │                  │
@@ -39,6 +46,31 @@ All domain skills follow a 5-phase workflow:
 ---
 
 ## Phase Breakdown
+
+### Phase 0: TASK DEFINITION - What Is This Curation FOR?
+
+**What it is:** Capturing the goal, decision, or research question that the entire curation pipeline exists to serve. A task is defined in natural language (name + description) and stored as a TypeDB entity.
+
+**Why it matters:** Without an explicit task, curation has no anchor. The task:
+- Drives what you forage for (what counts as relevant?)
+- Frames sensemaking (what do I extract? what questions do I ask?)
+- Scopes analysis (which notes are relevant to this goal?)
+- Organizes reporting (show me everything contributing to task X)
+
+**Task states:** `active` (in progress), `completed` (goal achieved), `on-hold` (paused)
+
+**Examples by domain:**
+
+| Domain | Example Task |
+|--------|-------------|
+| Job hunting | "Find a senior ML engineering role at a mission-driven company in the Bay Area by Q3" |
+| Literature review | "Understand the state of evidence for CRISPR off-target effects in vivo" |
+| Biology research | "Identify candidate genes for Ehlers-Danlos syndrome subtype 6" |
+| News investigation | "Map the network of venture-backed edtech companies expanding into adult learning" |
+
+**Key insight:** A task is the anchor for reporting. "Show me all analysis notes that contribute to my job search task" is a natural query once `task-contribution` relations exist.
+
+---
 
 ### Phase 1: FORAGING - Discovering Sources
 
@@ -254,6 +286,7 @@ else:
 
 | Alhazen Type | Your Domain | Example (Job Hunt) | Example (Lit Review) |
 |--------------|-------------|-------------------|---------------------|
+| **Task** | The goal framing the curation | "Find a senior ML role" | "Understand CRISPR off-target effects" |
 | **Thing** | Primary items you track | Company, Position | Paper, Author |
 | **Artifact** | Raw captured content | Job Description | PDF, Abstract |
 | **Fragment** | Extracted pieces | Requirement | Claim, Method |
@@ -333,6 +366,18 @@ define
 
 domain-attr-1, value string;
 domain-attr-2, value datetime;
+task-status, value string;   # active | completed | on-hold
+
+# =============================================================================
+# ENTITIES - Task (Phase 0: what this curation is FOR)
+# =============================================================================
+
+# Inherits id @key, name, description from domain-thing.
+# Natural-language goal goes in description.
+my-domain-task sub domain-thing,
+    owns task-status,
+    plays task-scope:task,
+    plays task-contribution:task;
 
 # =============================================================================
 # ENTITIES - Things
@@ -360,7 +405,8 @@ my-domain-fragment sub fragment,
 # ENTITIES - Notes
 # =============================================================================
 
-my-domain-note sub note;
+my-domain-note sub note,
+    plays task-contribution:note;
 
 # =============================================================================
 # RELATIONS
@@ -369,6 +415,16 @@ my-domain-note sub note;
 domain-relation sub relation,
     relates role1,
     relates role2;
+
+# Task scopes a collection (what body of knowledge serves this goal?)
+task-scope sub relation,
+    relates task,
+    relates collection;
+
+# Note contributes to a task (links sensemaking output back to the goal)
+task-contribution sub relation,
+    relates task,
+    relates note;
 ```
 
 ---
@@ -418,20 +474,113 @@ domain-relation sub relation,
 
 ---
 
-## Your Skill Profile Pattern
+## User Profile Pattern
 
-For domains where you're comparing against your own capabilities (job hunting, learning):
+For domains where sensemaking depends on stable facts about the user — location,
+constraints, preferences — define a profile entity so Claude never has to ask.
+
+**When to use:** Any skill where analysis depends on the user-as-subject.
+Examples: job hunting (location viability, salary floor), health tracking (conditions,
+medications), learning (time budget, current level).
+
+### Schema Template (TypeDB 3.x)
 
 ```typeql
-your-skill sub entity,
-    owns skill-name,
-    owns skill-level,     # strong/some/none/learning
-    owns last-updated;
+# Profile attributes
+attribute home-location, value string;
+attribute my-domain-constraint, value string;
+
+# Profile entity - inherits id, name, description from domain-thing.
+# sub agent if the user is acting (job seeker, patient, learner).
+# sub domain-thing if the user is an object being tracked.
+# Singleton in practice; schema supports multi-user scenarios.
+entity my-domain-user-profile sub agent,
+    owns home-location,
+    owns my-domain-constraint;
 ```
 
-Script commands: `add-skill --name --level`, `list-skills`
+### CLI Convention
 
-Claude uses this for gap analysis during sensemaking.
+Two commands, always paired:
+
+```bash
+# Upsert: create if none exists, replace if one exists
+script.py set-profile --location "..." --constraint "..."
+
+# Read: single call that returns everything Claude needs for sensemaking
+script.py show-profile
+```
+
+### Sensemaking Integration
+
+In USAGE.md, instruct Claude to call `show-profile` **before** any analysis that
+depends on user context:
+
+```markdown
+## Sensemaking Workflow
+1. **Load seeker profile** (call FIRST — never ask the user for this information)
+   script.py show-profile
+   Use result to automatically assess: location viability, constraint alignment, gaps
+```
+
+The `show-profile` command should return the profile entity plus all related
+inventory (skills, learning resources, etc.) in a single JSON response.
+
+### Reference Implementation
+
+See `local_skills/jobhunt/jobhunt.py` `cmd_set_profile` and `cmd_show_profile` for
+a complete example (`jobhunt-seeker sub agent` with `home-location`, `salary-floor`,
+`remote-preference`, linked skills and learning resources).
+
+---
+
+## Skill Quality Tracking
+
+Record deficiencies discovered during skill use. When Claude has to ask something
+that should have been stored, or makes an incorrect inference, log it as a
+`schema-gap` for systematic improvement.
+
+### What to Log
+
+| Gap Type | When to Log |
+|----------|-------------|
+| `missing-user-context` | Had to ask the user for something that should be in the profile |
+| `missing-entity-type` | No TypeDB type exists for something we needed to store |
+| `missing-attribute` | Existing type lacks an attribute the workflow needed |
+| `unclear-workflow` | Sensemaking instructions were ambiguous or produced wrong output |
+| `incorrect-inference` | Claude's reasoning produced a factually wrong result |
+
+### Commands (typedb-notebook skill)
+
+```bash
+# Record a gap
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py record-gap \
+    --skill jobhunt \
+    --type missing-user-context \
+    --description "User home location not stored; had to ask about on-site viability" \
+    --severity moderate \
+    --example "GenBio AI on-site Palo Alto role: asked user if Palo Alto commute was viable"
+
+# List open gaps for a skill
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py list-gaps --skill jobhunt
+
+# List all open gaps
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py list-gaps
+
+# Close a gap once addressed
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py close-gap \
+    --id "gap-abc123" --status addressed
+```
+
+### System Improvement Loop
+
+1. Claude encounters a gap during a workflow (asks user, makes wrong inference)
+2. Immediately record it: `typedb-notebook record-gap --skill X --type Y --description "..."`
+3. Periodically review: `typedb-notebook list-gaps` — use open gaps as improvement backlog
+4. Fix the schema/workflow/profile, then close: `typedb-notebook close-gap --id X --status addressed`
+
+The `skill-model` entity (auto-created by `record-gap`) is the first-class representation
+of each skill in the knowledge graph. Multiple gaps can be linked to one skill-model.
 
 ---
 

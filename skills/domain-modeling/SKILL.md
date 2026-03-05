@@ -9,10 +9,11 @@ Use this skill when designing a **new knowledge domain** for the Alhazen noteboo
 
 **When to use:** "design a new domain", "create a new skill", "model a new domain", "build a knowledge skill for", "add a new skill for tracking", "how do I create a skill"
 
-## The Curation Pattern (5 phases)
+## The Curation Pattern (6 phases)
 
-All domain skills follow: **FORAGING → INGESTION → SENSEMAKING → ANALYSIS → REPORTING**
+All domain skills follow: **TASK DEFINITION → FORAGING → INGESTION → SENSEMAKING → ANALYSIS → REPORTING**
 
+- **Task Definition (Phase 0)**: Define the goal or decision the curation is meant to serve (natural language, stored as a `task` entity)
 - **Foraging**: Discover sources (URLs, APIs, databases)
 - **Ingestion**: Capture raw content with provenance (script responsibility — no parsing)
 - **Sensemaking**: Claude reads artifacts and creates structured understanding (entities, fragments, notes)
