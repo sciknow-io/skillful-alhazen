@@ -436,3 +436,18 @@ When Claude makes a mistake, add it to this section so it doesn't happen again.
 - **Fetch results are plain dicts** - No `.get("value")` unwrapping needed; access keys directly
 - **Delete syntax** - Use `delete $x;` (NOT `delete $x isa type;` — the `isa` qualifier in the delete clause is invalid in 3.x and causes a parse error)
 - **Full reference** — Read `local_resources/typedb/llms.txt` on demand before writing queries; full docs at `local_resources/typedb/typedb-3x-reference.md`
+
+### Skill Script Queries
+
+- **Dump before accessing** — When a skill script's JSON output schema is unknown, do a raw
+  dump first to confirm key names: `| python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin),indent=2))"`
+  before writing any key-access post-processor.
+- **Pipeline exit 1 ≠ script failure** — In `script | python3 -c "..."`, exit code 1 almost
+  always means the *post-processor* failed (KeyError, wrong key name), not the script itself.
+  The script's `"success": true` in the output is the ground truth. Run the script alone to
+  confirm, then fix the key names.
+- **Canonical inspection one-liner:**
+  ```bash
+  uv run python .claude/skills/<skill>/<skill>.py <command> [args] 2>/dev/null \
+      | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin),indent=2))"
+  ```
