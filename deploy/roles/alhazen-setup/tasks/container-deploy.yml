@@ -130,12 +130,23 @@
 # which maps to openclaw-data/skills/ on the host via the docker-compose volume mount.
 # -L follows symlinks so core skills (local_skills/typedb-notebook → ../skills/typedb-notebook)
 # are copied as real directories.
+- name: Clean Managed Skills Dir (prevent stale skill accumulation)
+  shell: |
+    rm -rf "{{ data_dir }}/skills"
+    mkdir -p "{{ data_dir }}/skills"
+  become: true
+  become_user: "{{ openclaw_user }}"
+
 - name: Copy Alhazen Skills to Managed Skills Dir
   shell: |
     mkdir -p {{ data_dir }}/skills
+    ALLOWLIST="{{ skills_allowlist | default('') }}"
     for skill_dir in {{ repo_dir }}/local_skills/*/; do
       [ -d "$skill_dir" ] || continue
       skill_name=$(basename "$skill_dir")
+      if [ -n "$ALLOWLIST" ]; then
+        echo ",$ALLOWLIST," | grep -q ",${skill_name}," || continue
+      fi
       cp -rL "$skill_dir" "{{ data_dir }}/skills/$skill_name"
     done
   become: true
@@ -308,9 +319,13 @@
 - name: Generate Alhazen Skill Entries in OpenClaw Config
   shell: |
     patch='{}'
+    ALLOWLIST="{{ skills_allowlist | default('') }}"
     for skill_dir in {{ repo_dir }}/local_skills/*/; do
       [ -d "$skill_dir" ] || continue
       skill_name=$(basename "$skill_dir")
+      if [ -n "$ALLOWLIST" ]; then
+        echo ",$ALLOWLIST," | grep -q ",${skill_name}," || continue
+      fi
       patch=$(echo "$patch" | jq --arg name "$skill_name" \
         --arg root "/opt/openclaw/workspace" \
         --arg typedb_host "typedb" \

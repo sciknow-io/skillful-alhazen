@@ -46,7 +46,6 @@
     "mdns": { "mode": "off" }
   },
   "models": {
-    "mode": "merge",
     "providers": {
       "{{ llm_provider }}": {
         "baseUrl": "{{ 'http://localhost:4000' if target_type == 'macmini' else 'http://litellm:4000' }}",
@@ -95,6 +94,11 @@
   "skills": {
     "entries": {}
   },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": false,
+    "restart": true
+  },
   "agents": {
     "defaults": {
       "heartbeat": { "every": "5m" },
@@ -104,12 +108,9 @@
     },
     "list": [
       {
-        "id": "files",
-        "name": "FileSentry"
-      },
-      {
-        "id": "dev",
-        "name": "Coder"
+        "id": "jobhunt",
+        "name": "JobCoach",
+        "skills": {{ skills_allowlist.split(',') | map('trim') | list | to_json if skills_allowlist | default('') != '' else '[]' }}
       }
     ]
   }
