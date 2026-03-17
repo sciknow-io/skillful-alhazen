@@ -146,12 +146,22 @@
     HOME: "{{ openclaw_home }}"
     PATH: "{{ macos_path }}"
 
+- name: Clean Managed Skills Dir (prevent stale skill accumulation)
+  shell: |
+    rm -rf "{{ openclaw_home }}/.openclaw/skills"
+    mkdir -p "{{ openclaw_home }}/.openclaw/skills"
+  become: true
+  become_user: "{{ openclaw_user }}"
+
 - name: Copy Alhazen Skills to openclaw Managed Skills Dir
   shell: |
-    mkdir -p {{ openclaw_home }}/.openclaw/skills
+    ALLOWLIST="{{ skills_allowlist | default('') }}"
     for skill_dir in {{ repo_dir }}/local_skills/*/; do
       [ -d "$skill_dir" ] || continue
       skill_name=$(basename "$skill_dir")
+      if [ -n "$ALLOWLIST" ]; then
+        echo ",$ALLOWLIST," | grep -q ",${skill_name}," || continue
+      fi
       cp -rL "$skill_dir" "{{ openclaw_home }}/.openclaw/skills/$skill_name"
     done
   become: true
@@ -325,9 +335,13 @@
 - name: Generate Alhazen Skill Entries in openclaw.json
   shell: |
     patch='{}'
+    ALLOWLIST="{{ skills_allowlist | default('') }}"
     for skill_dir in {{ repo_dir }}/local_skills/*/; do
       [ -d "$skill_dir" ] || continue
       skill_name=$(basename "$skill_dir")
+      if [ -n "$ALLOWLIST" ]; then
+        echo ",$ALLOWLIST," | grep -q ",${skill_name}," || continue
+      fi
       patch=$(echo "$patch" | jq --arg name "$skill_name" \
         --arg root "{{ openclaw_home }}/workspace" \
         --arg typedb_host "localhost" \
