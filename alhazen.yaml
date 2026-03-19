@@ -5,19 +5,12 @@
 #
 # Environment variable overrides:
 #   ALHAZEN_MONITORING_ENABLED=true   — enable skill usage logging
-#   ALHAZEN_TEXTGRAD_ENABLED=true     — enable TextGrad optimization
 
 monitoring:
   # Set to true to activate PostToolUse logging hook (requires TypeDB running)
   enabled: true
   # Raise an error if TypeDB is unavailable when logging fires
   error_on_typedb_unavailable: true
-
-textgrad:
-  # Set to true to allow 'make optimize-skill'
-  enabled: false
-  # LLM backend for TextGrad optimization (via LiteLLM experimental engines)
-  backend: "claude-sonnet-4-6"
 
 skills:
   # Allowlist mode: if 'enabled' is specified, ONLY these skills are active.

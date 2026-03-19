@@ -4,7 +4,6 @@ Shared configuration reader for Alhazen skill infrastructure.
 Reads alhazen.yaml from the project root. Environment variables override
 the config file:
   ALHAZEN_MONITORING_ENABLED=true/false
-  ALHAZEN_TEXTGRAD_ENABLED=true/false
 """
 
 import os
@@ -48,25 +47,6 @@ def error_on_typedb_unavailable() -> bool:
     """Return True if the hook should exit non-zero when TypeDB is down."""
     cfg = _load_raw()
     return cfg.get("monitoring", {}).get("error_on_typedb_unavailable", True)
-
-
-def is_textgrad_enabled() -> bool:
-    """
-    Return True if TextGrad optimization is permitted.
-
-    Checks ALHAZEN_TEXTGRAD_ENABLED env var first, then alhazen.yaml.
-    """
-    env_val = os.environ.get("ALHAZEN_TEXTGRAD_ENABLED")
-    if env_val is not None:
-        return env_val.lower() in ("1", "true", "yes")
-    cfg = _load_raw()
-    return cfg.get("textgrad", {}).get("enabled", False)
-
-
-def get_textgrad_backend() -> str:
-    """Return the LLM backend identifier for TextGrad optimization."""
-    cfg = _load_raw()
-    return cfg.get("textgrad", {}).get("backend", "claude-sonnet-4-6")
 
 
 def get_active_skills() -> Optional[set]:

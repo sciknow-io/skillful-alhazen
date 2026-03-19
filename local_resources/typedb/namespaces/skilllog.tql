@@ -1,8 +1,7 @@
 # =============================================================================
 # SKILLLOG NAMESPACE - TypeDB 3.x Schema
 # =============================================================================
-# Tracks skill invocations and LLM calls for token observability, evaluation,
-# and TextGrad optimization.
+# Tracks skill invocations and LLM calls for token observability and evaluation.
 #
 # Entity hierarchy:
 #   skilllog-session    → collection     (groups invocations in one Claude session)
@@ -37,7 +36,7 @@ attribute skill-mds-tokens, value integer;
 attribute soul-md-tokens, value integer;
 attribute agents-md-tokens, value integer;
 
-# Evaluation label for TextGrad dataset building
+# Evaluation label for quality tracking
 # Values: unlabeled | golden | rejected
 attribute evaluation-label, value string;
 

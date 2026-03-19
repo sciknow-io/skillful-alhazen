@@ -47,7 +47,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(setup|db-)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo
 	@echo "$(GREEN)Skill Deployment:$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(deploy|skills|monitoring|textgrad)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(deploy|skills|monitoring)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo
 	@echo "$(GREEN)Database Management:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'db-' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
@@ -60,9 +60,6 @@ help: ## Show this help message
 	@echo
 	@echo "$(GREEN)Documentation:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'docs-' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
-	@echo
-	@echo "$(GREEN)TextGrad Optimization:$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'optimize-skill' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo
 	@echo "$(GREEN)Observability:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(skills-token|skills-invocations)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
@@ -394,14 +391,6 @@ monitoring-on: ## Enable skill usage logging (sets monitoring.enabled: true in a
 monitoring-off: ## Disable skill usage logging (sets monitoring.enabled: false in alhazen.yaml)
 	@python3 -c "import re; p='alhazen.yaml'; c=open(p).read(); c=re.sub(r'(monitoring:.*?\n\s*enabled:)\s*true',r'\1 false',c,flags=re.DOTALL); open(p,'w').write(c); print('Monitoring disabled in alhazen.yaml')"
 
-.PHONY: textgrad-on
-textgrad-on: ## Enable TextGrad optimization (sets textgrad.enabled: true in alhazen.yaml)
-	@python3 -c "import re; p='alhazen.yaml'; c=open(p).read(); c=re.sub(r'(textgrad:.*?\n\s*enabled:)\s*false',r'\1 true',c,flags=re.DOTALL); open(p,'w').write(c); print('TextGrad enabled in alhazen.yaml')"
-
-.PHONY: textgrad-off
-textgrad-off: ## Disable TextGrad optimization (sets textgrad.enabled: false in alhazen.yaml)
-	@python3 -c "import re; p='alhazen.yaml'; c=open(p).read(); c=re.sub(r'(textgrad:.*?\n\s*enabled:)\s*true',r'\1 false',c,flags=re.DOTALL); open(p,'w').write(c); print('TextGrad disabled in alhazen.yaml')"
-
 define SKILLS_LIST_PY
 import sys
 from pathlib import Path
@@ -609,29 +598,6 @@ skills-update: ## Re-resolve all skills from registry (re-links core, re-clones 
 skills-sync: ## [deprecated] Skills are now self-contained — metadata lives in skill.yaml/SKILL.md
 	@echo "$(YELLOW)skills-sync is no longer needed: each skill is its own source of truth.$(NC)"
 	@echo "$(YELLOW)Edit skills/*/SKILL.md (core) or local_skills/*/SKILL.md (external) directly.$(NC)"
-
-# =============================================================================
-# TextGrad Optimization
-# =============================================================================
-
-SKILL_OPTIMIZER := $(PROJECT_ROOT)/local_resources/textgrad/skill_optimizer.py
-
-.PHONY: optimize-skill
-optimize-skill: ## Run TextGrad optimization on a skill (requires SKILL=name, textgrad.enabled: true)
-ifndef SKILL
-	@echo "$(RED)Error: SKILL variable required. Usage: make optimize-skill SKILL=jobhunt$(NC)"
-	@exit 1
-endif
-	@echo "$(BLUE)Optimizing skill: $(SKILL)$(NC)"
-	uv run python $(SKILL_OPTIMIZER) --skill $(SKILL) --create-pr
-
-.PHONY: optimize-skill-dry-run
-optimize-skill-dry-run: ## Preview TextGrad optimization without making changes (requires SKILL=name)
-ifndef SKILL
-	@echo "$(RED)Error: SKILL variable required. Usage: make optimize-skill-dry-run SKILL=jobhunt$(NC)"
-	@exit 1
-endif
-	uv run python $(SKILL_OPTIMIZER) --skill $(SKILL) --dry-run
 
 # =============================================================================
 # Skill Observability

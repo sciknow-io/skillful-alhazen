@@ -24,7 +24,6 @@ operations:
     - list-domains
     - show-domain
   schema_snapshots:
-    - snapshot-schema
     - list-versions
     - install-hook
   design_decisions:

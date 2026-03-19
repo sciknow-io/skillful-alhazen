@@ -14,7 +14,6 @@ Commands:
 
     Skill snapshots:
         snapshot-skill      Capture all skill files with git metadata
-        snapshot-schema     [DEPRECATED] Use snapshot-skill instead
         list-versions       List skill snapshots for a domain
         list-files          List files captured in a snapshot
         show-file           Show content of a captured file
@@ -37,6 +36,12 @@ Commands:
         report-error        Report a schema representation failure
         resolve-error       Mark an error as resolved
         list-errors         List errors for a domain
+
+    Source documents (Phase 1 inputs):
+        ingest-source-doc   Ingest a file, text, stdin, or URL as a source document
+        list-source-docs    List source documents for a domain
+        show-source-doc     Show content/cache-path of a source document
+        generate-template   Print the blank domain spec template to stdout
 
     Export:
         export-design       Export annotated Markdown design changelog
@@ -614,33 +619,6 @@ def cmd_snapshot_skill(args):
         "files_captured": len(captured),
         "files": captured,
     })
-
-
-def cmd_snapshot_schema(args):
-    """DEPRECATED: use snapshot-skill instead. Kept for backward compatibility."""
-    print(
-        "Warning: snapshot-schema is deprecated. Use snapshot-skill --skill-dir instead.",
-        file=sys.stderr,
-    )
-    if not TYPEDB_AVAILABLE:
-        out({"success": False, "error": "typedb-driver not installed"})
-        return
-
-    # Build a minimal args-like object to delegate to cmd_snapshot_skill
-    # with the schema file's parent directory as skill_dir
-    schema_path = Path(args.schema_file)
-    if not schema_path.exists():
-        out({"success": False, "error": f"Schema file not found: {args.schema_file}"})
-        return
-
-    class _FakeArgs:
-        domain_id = args.domain_id
-        skill_dir = str(schema_path.parent)
-        version = getattr(args, "version", None)
-        repo_dir = getattr(args, "repo_dir", ".")
-        commit = getattr(args, "commit", None)
-
-    cmd_snapshot_skill(_FakeArgs())
 
 
 def cmd_set_task(args):
@@ -2025,6 +2003,195 @@ def cmd_export_design_phases(args):
 
 
 # =============================================================================
+# SOURCE DOCUMENT INGESTION (Phase 1 inputs)
+# =============================================================================
+
+
+def cmd_ingest_source_doc(args):
+    """Ingest a source document and link it to a domain via dm-source-for."""
+    if not TYPEDB_AVAILABLE:
+        out({"success": False, "error": "typedb-driver not installed"})
+        return
+
+    import mimetypes
+
+    content = None
+    mime_type = "text/plain"
+    source_file = None
+
+    if args.file:
+        source_file = Path(args.file)
+        if not source_file.exists():
+            out({"success": False, "error": f"File not found: {args.file}"})
+            return
+        guessed, _ = mimetypes.guess_type(str(source_file))
+        if guessed:
+            mime_type = guessed
+        elif source_file.suffix.lower() in (".md", ".markdown"):
+            mime_type = "text/markdown"
+        try:
+            if mime_type.startswith("text/") or mime_type == "application/json":
+                content = source_file.read_text(encoding="utf-8", errors="replace")
+            else:
+                content = source_file.read_bytes()
+        except Exception as e:
+            out({"success": False, "error": f"Failed to read file: {e}"})
+            return
+    elif args.stdin:
+        content = sys.stdin.read()
+        mime_type = "text/plain"
+    elif args.text:
+        content = args.text
+        mime_type = "text/plain"
+    elif args.url:
+        import urllib.request
+        try:
+            with urllib.request.urlopen(args.url, timeout=30) as resp:
+                raw = resp.read()
+                ct = resp.headers.get("Content-Type", "")
+                if ";" in ct:
+                    ct = ct.split(";")[0].strip()
+                mime_type = ct or "application/octet-stream"
+                if mime_type.startswith("text/"):
+                    content = raw.decode("utf-8", errors="replace")
+                else:
+                    content = raw
+        except Exception as e:
+            out({"success": False, "error": f"Failed to fetch URL: {e}"})
+            return
+    else:
+        out({"success": False, "error": "Must provide --file, --stdin, --text, or --url"})
+        return
+
+    # Determine format string for TypeDB
+    fmt = "text"
+    if mime_type == "application/pdf":
+        fmt = "pdf"
+    elif mime_type == "text/html":
+        fmt = "html"
+    elif mime_type in ("text/markdown",) or (source_file and source_file.suffix.lower() in (".md", ".markdown")):
+        fmt = "markdown"
+    elif mime_type == "application/json":
+        fmt = "json"
+    elif mime_type and mime_type.startswith("image/"):
+        fmt = "image"
+
+    doc_type = args.doc_type or "other"
+
+    title = args.title
+    if not title:
+        if source_file:
+            title = source_file.name
+        elif args.url:
+            title = args.url[:80]
+        else:
+            title = f"source-doc-{get_timestamp()[:10]}"
+
+    doc_id = generate_id("dm-source-doc")
+    ts = get_timestamp()
+
+    clauses = [
+        s("id", doc_id),
+        s("name", title[:200] if title else doc_id),
+        dt("created-at", ts),
+        s("dm-source-doc-type", doc_type),
+        s("format", fmt),
+    ]
+
+    if args.url:
+        clauses.append(s("source-uri", args.url))
+
+    # Cache large content; store small content inline
+    if isinstance(content, bytes):
+        content_bytes = content
+    else:
+        content_bytes = (content or "").encode("utf-8")
+
+    if should_cache(content_bytes):
+        cache_result = save_to_cache(doc_id, content_bytes, mime_type)
+        if cache_result:
+            clauses.append(s("cache-path", cache_result["cache_path"]))
+        elif not isinstance(content, bytes):
+            # Fallback: store inline if cache unavailable
+            clauses.append(s("content", content or ""))
+    else:
+        content_str = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else (content or "")
+        clauses.append(s("content", content_str))
+
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            insert_entity(tx, "dm-source-doc", clauses)
+            insert_relation(tx, "dm-source-for", {
+                "source-doc": ("dm-source-doc", doc_id),
+                "domain": ("dm-domain", args.domain_id),
+            })
+            tx.commit()
+
+    out({
+        "success": True,
+        "id": doc_id,
+        "title": title,
+        "doc_type": doc_type,
+        "format": fmt,
+        "domain_id": args.domain_id,
+    })
+
+
+def cmd_list_source_docs(args):
+    """List dm-source-doc entities for a domain."""
+    if not TYPEDB_AVAILABLE:
+        out({"success": False, "error": "typedb-driver not installed"})
+        return
+
+    eid = escape_string(args.domain_id)
+    q = f"""
+        match $doc isa dm-source-doc;
+              $d isa dm-domain, has id "{eid}";
+              (source-doc: $doc, domain: $d) isa dm-source-for;
+        fetch {{ "id": $doc.id, "name": $doc.name,
+                "doc_type": $doc.dm-source-doc-type, "format": $doc.format,
+                "source_uri": $doc.source-uri, "created": $doc.created-at }};
+    """
+    with get_driver() as driver:
+        results = fetch_query(driver, q)
+
+    out({"success": True, "domain_id": args.domain_id, "count": len(results), "source_docs": results})
+
+
+def cmd_show_source_doc(args):
+    """Fetch full content (or cache-path) of a source doc."""
+    if not TYPEDB_AVAILABLE:
+        out({"success": False, "error": "typedb-driver not installed"})
+        return
+
+    eid = escape_string(args.doc_id)
+    q = f"""
+        match $doc isa dm-source-doc, has id "{eid}";
+        fetch {{ "id": $doc.id, "name": $doc.name,
+                "doc_type": $doc.dm-source-doc-type, "format": $doc.format,
+                "source_uri": $doc.source-uri, "content": $doc.content,
+                "cache_path": $doc.cache-path, "created": $doc.created-at }};
+    """
+    with get_driver() as driver:
+        results = fetch_query(driver, q)
+
+    if not results:
+        out({"success": False, "error": f"Source doc not found: {args.doc_id}"})
+        return
+
+    out({"success": True, "doc": results[0]})
+
+
+def cmd_generate_template(args):
+    """Print the blank domain spec template to stdout (raw Markdown, not JSON)."""
+    template_path = Path(__file__).parent / "templates" / "domain-spec-template.md"
+    if not template_path.exists():
+        out({"success": False, "error": f"Template not found: {template_path}"})
+        return
+    print(template_path.read_text(encoding="utf-8"))
+
+
+# =============================================================================
 # ARGUMENT PARSER
 # =============================================================================
 
@@ -2055,14 +2222,6 @@ def main():
     p = subparsers.add_parser("snapshot-skill", help="Capture all skill files with git metadata")
     p.add_argument("--domain-id", required=True, help="Domain ID")
     p.add_argument("--skill-dir", required=True, help="Path to skill directory")
-    p.add_argument("--version", help="Version tag (e.g. v1.0); defaults to snapshot-YYYY-MM-DD")
-    p.add_argument("--repo-dir", default=".", help="Git repo directory (default: .)")
-    p.add_argument("--commit", help="Override git commit SHA (for retroactive documentation)")
-
-    p = subparsers.add_parser("snapshot-schema",
-                              help="[DEPRECATED] Use snapshot-skill. Capture schema state.")
-    p.add_argument("--domain-id", required=True, help="Domain ID")
-    p.add_argument("--schema-file", required=True, help="Path to schema.tql file")
     p.add_argument("--version", help="Version tag (e.g. v1.0); defaults to snapshot-YYYY-MM-DD")
     p.add_argument("--repo-dir", default=".", help="Git repo directory (default: .)")
     p.add_argument("--commit", help="Override git commit SHA (for retroactive documentation)")
@@ -2270,6 +2429,28 @@ def main():
                               help="Export structured Markdown design phases report")
     p.add_argument("--domain-id", required=True, help="Domain ID")
 
+    # --- Source documents (Phase 1 inputs) ---
+    p = subparsers.add_parser("ingest-source-doc",
+                              help="Ingest a source document (file, text, stdin, or URL) and link to domain")
+    p.add_argument("--domain-id", required=True, help="Domain ID")
+    p.add_argument("--file", help="Path to local file (PDF, image, markdown, etc.)")
+    p.add_argument("--text", help="Inline text content (e.g. pasted email or short spec)")
+    p.add_argument("--stdin", action="store_true", help="Read content from stdin")
+    p.add_argument("--url", help="URL to record as source-uri; used as fallback fetch source if no other input given")
+    p.add_argument("--doc-type",
+                   choices=["template", "paper", "email", "image", "spec", "other"],
+                   default="other", help="Document type (default: other)")
+    p.add_argument("--title", help="Document title/name (auto-detected from filename if omitted)")
+
+    p = subparsers.add_parser("list-source-docs", help="List source documents for a domain")
+    p.add_argument("--domain-id", required=True, help="Domain ID")
+
+    p = subparsers.add_parser("show-source-doc", help="Show content/cache-path of a source document")
+    p.add_argument("--doc-id", required=True, help="Source doc ID")
+
+    p = subparsers.add_parser("generate-template",
+                              help="Print blank domain spec template to stdout (fill out and ingest with ingest-source-doc)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -2282,7 +2463,6 @@ def main():
         "show-domain": cmd_show_domain,
         "set-task": cmd_set_task,
         "snapshot-skill": cmd_snapshot_skill,
-        "snapshot-schema": cmd_snapshot_schema,
         "list-versions": cmd_list_versions,
         "list-files": cmd_list_files,
         "show-file": cmd_show_file,
@@ -2314,6 +2494,10 @@ def main():
         "list-phase-gaps": cmd_list_phase_gaps,
         "show-phase-item": cmd_show_phase_item,
         "export-design-phases": cmd_export_design_phases,
+        "ingest-source-doc": cmd_ingest_source_doc,
+        "list-source-docs": cmd_list_source_docs,
+        "show-source-doc": cmd_show_source_doc,
+        "generate-template": cmd_generate_template,
     }
 
     try:

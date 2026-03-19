@@ -41,6 +41,7 @@ attribute dm-skill-name, value string;
 attribute dm-skill-task, value string;
 attribute dm-file-type, value string;
 attribute dm-plan-order, value integer;
+attribute dm-source-doc-type, value string;   # "template"|"paper"|"email"|"image"|"spec"|"other"
 
 # -----------------------------------------------------------------------------
 # RELATIONS (before entities so role names resolve in entity plays clauses)
@@ -107,7 +108,8 @@ entity dm-domain sub collection,
     owns dm-skill-task,
     plays dm-version-of:domain,
     plays dm-in-domain:domain,
-    plays dm-system-goal:system;
+    plays dm-system-goal:system,
+    plays dm-source-for:domain;
 
 # Umbrella snapshot of the full skill at one git commit.
 # Inherits content + cache-path from artifact -> information-content-entity
@@ -131,6 +133,12 @@ entity dm-skill-file sub artifact,
     owns dm-file-type,
     owns dm-plan-order,
     plays dm-snapshot-contains:file;
+
+# A source document ingested during Phase 1 (paper, email, image, template, spec).
+# Inherits content, cache-path, format, source-uri from artifact.
+entity dm-source-doc sub artifact,
+    owns dm-source-doc-type,
+    plays dm-source-for:source-doc;
 
 # A specific schema design choice (entity, relation, attribute, hierarchy, constraint).
 # dm-linked-gap-id is multi-valued: one value per linked schema-gap from skilllog.
@@ -193,6 +201,11 @@ attribute dm-output-types, value string;                  # entity/relation type
 # -----------------------------------------------------------------------------
 # PHASE RELATIONS (before entities so role names resolve in entity plays clauses)
 # -----------------------------------------------------------------------------
+
+# Phase 1: source document informs domain design
+relation dm-source-for,
+    relates source-doc,
+    relates domain;
 
 # Phase 1: dm-domain [1] -> dm-goal [1]
 relation dm-system-goal,

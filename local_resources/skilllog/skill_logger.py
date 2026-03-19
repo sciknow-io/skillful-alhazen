@@ -14,7 +14,6 @@ Usage as CLI:
     uv run python local_resources/skilllog/skill_logger.py list-invocations [--skill NAME]
     uv run python local_resources/skilllog/skill_logger.py token-report [--skill NAME]
     uv run python local_resources/skilllog/skill_logger.py label --id INVOCATION_ID (--golden | --rejected | --unlabeled)
-    uv run python local_resources/skilllog/skill_logger.py export-golden --skill NAME [--output FILE]
     uv run python local_resources/skilllog/skill_logger.py context-trend [--skill NAME]
     uv run python local_resources/skilllog/skill_logger.py migrate-context-schema
 """
@@ -554,79 +553,6 @@ def cmd_token_report_llm(args):
         sys.exit(1)
 
 
-def cmd_export_golden(args):
-    """Export golden invocations as JSON for TextGrad consumption."""
-    try:
-        from typedb.driver import TransactionType
-
-        driver, database = get_typedb_connection()
-        skill_filter = f', has skill-name "{args.skill}"' if args.skill else ""
-
-        with driver.transaction(database, TransactionType.READ) as tx:
-            # Get golden invocations
-            query = f"""
-                match $inv isa skilllog-invocation{skill_filter},
-                    has id $id,
-                    has skill-name $skill,
-                    has command-name $cmd,
-                    has evaluation-label "golden",
-                    has created-at $ts;
-                fetch {{
-                    "id": $id,
-                    "skill": $skill,
-                    "cmd": $cmd,
-                    "ts": $ts
-                }};
-            """
-            inv_results = list(tx.query(query).resolve())
-
-            records = []
-            for r in inv_results:
-                inv_id = r["id"]
-
-                # Get input artifact
-                in_q = f"""
-                    match $inv isa skilllog-invocation, has id "{inv_id}";
-                        $art isa skilllog-input, has content $c;
-                        (referent: $inv, artifact: $art) isa representation;
-                    fetch {{ "c": $c }};
-                """
-                in_res = list(tx.query(in_q).resolve())
-                input_content = in_res[0]["c"] if in_res else ""
-
-                # Get output artifact
-                out_q = f"""
-                    match $inv isa skilllog-invocation, has id "{inv_id}";
-                        $art isa skilllog-output, has content $c;
-                        (referent: $inv, artifact: $art) isa representation;
-                    fetch {{ "c": $c }};
-                """
-                out_res = list(tx.query(out_q).resolve())
-                output_content = out_res[0]["c"] if out_res else ""
-
-                records.append({
-                    "id": inv_id,
-                    "skill": r["skill"],
-                    "command": r["cmd"],
-                    "timestamp": r["ts"],
-                    "input": input_content,
-                    "output": output_content,
-                })
-
-        driver.close()
-
-        output = json.dumps(records, indent=2)
-        if args.output:
-            Path(args.output).write_text(output)
-            print(f"Exported {len(records)} golden invocations to {args.output}")
-        else:
-            print(output)
-
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
 # ---------------------------------------------------------------------------
 # Schema migration
 # ---------------------------------------------------------------------------
@@ -810,12 +736,6 @@ def main():
     # token-report-llm
     p_llm = sub.add_parser("token-report-llm", help="Real LLM token usage from OpenClaw (LiteLLM callback)")
     p_llm.set_defaults(func=cmd_token_report_llm)
-
-    # export-golden
-    p_export = sub.add_parser("export-golden", help="Export golden invocations for TextGrad")
-    p_export.add_argument("--skill", help="Filter by skill name")
-    p_export.add_argument("--output", help="Output file path (default: stdout)")
-    p_export.set_defaults(func=cmd_export_golden)
 
     # migrate-context-schema
     p_migrate = sub.add_parser("migrate-context-schema", help="Add per-file context token attributes to live DB (non-destructive)")

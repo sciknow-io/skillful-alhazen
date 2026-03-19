@@ -1,78 +1,61 @@
 # Domain Modeling — Usage Reference
 
-## The Curation Design Pattern
+## Overview: What You're Building
 
-All domain skills follow a 6-phase workflow:
+A **skill** is a bundle of five artifacts that implements a curation pipeline:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CURATION WORKFLOW                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  0. TASK DEFINITION                                                          │
-│  ┌──────────────────────────────────────────────────────┐                   │
-│  │ Define the goal or decision the curation is FOR      │                   │
-│  │ (name + description in natural language = task entity)│                  │
-│  └──────────────────────────────────────────────────────┘                   │
-│                              │                                               │
-│                              ▼                                               │
-│  1. FORAGING          2. INGESTION         3. SENSEMAKING                   │
-│  ┌──────────┐        ┌──────────┐         ┌──────────────┐                  │
-│  │ Discover │───────▶│  Capture │────────▶│ Claude reads │                  │
-│  │ sources  │        │   raw    │         │ & extracts   │                  │
-│  └──────────┘        └──────────┘         └──────────────┘                  │
-│       │                   │                      │                          │
-│       ▼                   ▼                      ▼                          │
-│  - URLs             - Artifacts            - Fragments                      │
-│  - APIs             - Provenance           - Notes                          │
-│  - Feeds            - Timestamps           - Relations                      │
-│                                                                              │
-│                              │                                               │
-│                              ▼                                               │
-│               4. ANALYZE/SUMMARIZE        5. REPORT                         │
-│               ┌──────────────────┐       ┌──────────────┐                   │
-│               │ Reason over many │──────▶│  Dashboard   │                   │
-│               │ notes over time  │       │  & answers   │                   │
-│               └──────────────────┘       └──────────────┘                   │
-│                        │                        │                           │
-│                        ▼                        ▼                           │
-│                   - Synthesis notes        - Pipeline views                 │
-│                   - Trend analysis         - Skills matrix                  │
-│                   - Recommendations        - Strategic reports              │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+| Artifact | Purpose |
+|----------|---------|
+| `schema.tql` | TypeDB entity/relation/attribute definitions |
+| `<skill>.py` | CLI script: ingest, list, show, update commands |
+| `SKILL.md` | Short selection file (~30 lines) for Claude's context |
+| `USAGE.md` | Full reference: commands, workflows, sensemaking instructions |
+| `evals/` | Test cases measuring extraction performance (depending on the skill) |
+| `docs/` | Detailed technical documentation about the schema, script, skill, and evals |
+| `dash/` | Detailed technical documentation about the schema, script, skill, and evals |
 
 ---
 
-## Phase Breakdown
+## Process: How we define 'curation' 
 
-### Phase 0: TASK DEFINITION - What Is This Curation FOR?
+Our model of curation follows a 5-step process. This is what the skill *does* at runtime after it has been built:
 
-**What it is:** Capturing the goal, decision, or research question that the entire curation pipeline exists to serve. A task is defined in natural language (name + description) and stored as a TypeDB entity.
-
-**Why it matters:** Without an explicit task, curation has no anchor. The task:
-- Drives what you forage for (what counts as relevant?)
-- Frames sensemaking (what do I extract? what questions do I ask?)
-- Scopes analysis (which notes are relevant to this goal?)
-- Organizes reporting (show me everything contributing to task X)
-
-**Task states:** `active` (in progress), `completed` (goal achieved), `on-hold` (paused)
-
-**Examples by domain:**
-
-| Domain | Example Task |
-|--------|-------------|
-| Job hunting | "Find a senior ML engineering role at a mission-driven company in the Bay Area by Q3" |
-| Literature review | "Understand the state of evidence for CRISPR off-target effects in vivo" |
-| Biology research | "Identify candidate genes for Ehlers-Danlos syndrome subtype 6" |
-| News investigation | "Map the network of venture-backed edtech companies expanding into adult learning" |
-
-**Key insight:** A task is the anchor for reporting. "Show me all analysis notes that contribute to my job search task" is a natural query once `task-contribution` relations exist.
+```
++-----------------------------------------------------------------------------+
+|                         CURATION WORKFLOW                                   |
++-----------------------------------------------------------------------------+
+|                                                                             |
+|  1. DISCOVER         2. INGESTION         3. SENSEMAKING                    |
+|  +----------+        +----------+         +--------------+                  |
+|  | Discover |------->|  Capture |-------->| Claude reads |                  |
+|  | sources  |        |   raw    |         | & extracts   |                  |
+|  +----------+        +----------+         +--------------+                  |
+|       |                   |                      |                          |
+|       v                   v                      v                          |
+|  - URLs             - Artifacts            - Fragments                      |
+|  - APIs             - Provenance           - Notes                          |
+|  - Feeds            - Timestamps           - Relations                      |
+|                                                                             |
+|                              |                                              |
+|                              v                                              |
+|               4. ANALYZE/SUMMARIZE        5. REPORT                         |
+|               +------------------+       +--------------+                   |
+|               | Reason over many |------>|  Dashboard   |                   |
+|               | notes over time  |       |  & answers   |                   |
+|               +------------------+       +--------------+                   |
+|                        |                        |                           |
+|                        v                        v                           |
+|                   - Synthesis notes        - Pipeline views                 |
+|                   - Trend analysis         - Strategic reports              |
+|                   - Recommendations        - Output Code / Artifacts        |
+|                                                                             |
++-----------------------------------------------------------------------------+
+```
+Note: This skill, `domain-modeling`, follows this process to generate the artifacts listed above.
 
 ---
 
-### Phase 1: FORAGING - Discovering Sources
+### Phase 1: Discover — Finding Information Sources
 
 **What it is:** Finding things in the world worth capturing. Often the most creative/expansive phase.
 
@@ -84,13 +67,13 @@ All domain skills follow a 6-phase workflow:
 | News investigation | RSS feeds, social media, press releases, public records |
 | Biology research | Databases (UniProt, GenBank), preprints, lab websites |
 
-**Key insight:** Foraging can be recursive - finding one thing leads to discovering others.
+**Key insight:** Discovery can be recursive - finding one thing leads to finding  others.
 
 ---
 
-### Phase 2: INGESTION - Raw Capture with Provenance
+### Phase 2: Ingestion — Raw Capture with Provenance
 
-**What it is:** Pulling material in UNEDITED format. The artifact is the authoritative record.
+**What it is:** Pulling material in UNEDITED format. The artifact is the authoritative record. We make copies of external data, store them in the cache when needed and record their existance in the database.  
 
 **Critical properties:**
 - **Provenance** - Where did this come from? (URL, timestamp, API, email)
@@ -100,10 +83,10 @@ All domain skills follow a 6-phase workflow:
 **Maps to TypeDB:**
 ```
 Artifact (raw content)
-├── owns source-uri
-├── owns created-at (timestamp)
-├── owns content (full text/HTML)
-└── plays representation:artifact → Thing
++-- owns source-uri
++-- owns created-at (timestamp)
++-- owns content (full text/HTML)
++-- plays representation:artifact --> Thing
 ```
 
 **Script responsibility:** Fetch and store raw content. NO parsing, NO extraction, NO interpretation.
@@ -120,11 +103,11 @@ def ingest_url(url):
     return artifact_id  # Claude does the rest
 ```
 
-**Browser-based ingestion tip:** When using Playwright to browse large web pages (especially LinkedIn profiles), use `mcp__playwright__browser_take_screenshot` instead of parsing the DOM snapshot. The accessibility tree for these pages can be 100KB+ and easy to misread.
+**Browser-based ingestion tip:** When using Playwright to browse large web pages (especially LinkedIn profiles), use `mcp__playwright__browser_take_screenshot` instead of parsing the DOM snapshot. The accessibility tree for these pages can be 100KB+ and easy to misread. 
 
 ---
 
-### Phase 3: SENSEMAKING - Claude Reads and Extracts
+### Phase 3: Sensemaking — Claude Reads and Extracts
 
 **What it is:** Claude reads the artifact and creates structured understanding.
 
@@ -133,35 +116,35 @@ def ingest_url(url):
 | Subtask | Description | Output |
 |---------|-------------|--------|
 | **Parsing** | Understanding document structure | Structure map |
-| **Entity Extraction** | Identifying named entities | Entities → Things |
+| **Entity Extraction** | Identifying named entities | Entities -> Things |
 | **Relation Extraction** | How entities connect | Relations |
-| **Classification** | Categorizing (role type, seniority) | Tags |
-| **Summarization** | Condensing key points | Notes |
-| **Gap Analysis** | Comparing against known profile | Skill-gap notes |
+| **Classification** | Categorizing (role type, seniority) | Classification Tags |
+| **Summarization** | Condensing key points | Summary notes |
+| **Gap Analysis** | Comparisons between entities and pre-existing standards | Gap notes |
 | **Inference** | Drawing conclusions not explicitly stated | Analysis notes |
 
 **Maps to TypeDB:**
 ```
 Fragment (extracted piece of artifact)
-├── owns content (the specific text)
-├── plays extraction:fragment → Artifact (provenance back to source)
-└── plays aboutness:subject ← Note (Claude's interpretation)
++-- owns content (the specific text)
++-- plays extraction:fragment --> Artifact (provenance back to source)
++-- plays aboutness:subject <-- Note (Claude's interpretation)
 
 Note (Claude's understanding)
-├── owns content (Claude's interpretation/analysis)
-├── owns confidence (how sure Claude is)
-├── plays aboutness:note → [Thing, Artifact, Fragment, other Notes]
-└── owns tags
++-- owns content (Claude's interpretation/analysis)
++-- owns confidence (how sure Claude is)
++-- plays aboutness:note --> [Thing, Artifact, Fragment, other Notes]
++-- owns tags
 ```
 
 **Key architectural point:** Sensemaking is ITERATIVE. Claude might:
 1. First pass: Extract obvious entities (company name, job title, location)
 2. Second pass: Deeper analysis (requirements, responsibilities, culture signals)
 3. Later: Re-analyze when you have more context (compare to other postings)
-
+Past notes and sensemaking runs provide context for current sensemaking work. 
 ---
 
-### Phase 4: ANALYZE / SUMMARIZE - Reasoning Over Time
+### Phase 4: Analyze / Summarize — Reasoning Over Time
 
 **What it is:** Looking across many sensemaking notes to answer questions and generate insights.
 
@@ -173,114 +156,290 @@ Note (Claude's understanding)
 
 ```
 Synthesis Note
-├── about → [position-1, position-2, position-3]
-├── content: "Across these three roles, distributed systems appears
-│            as required in 2/3 and preferred in 1/3. This is your
-│            biggest gap. Recommend prioritizing DDIA book."
-└── tags: [synthesis, skill-gaps, recommendation]
++-- about --> [position-1, position-2, position-3]
++-- content: "Across these three roles, distributed systems appears
+|            as required in 2/3 and preferred in 1/3. This is your
+|            biggest gap. Recommend prioritizing DDIA book."
++-- tags: [synthesis, skill-gaps, recommendation]
 ```
 
 ---
 
-### Phase 5: REPORT - Presentation for Action
+### Phase 5: Report — Presentation for Action
 
 **Dashboard components:**
 - **Pipeline views** - Where things stand (Kanban)
-- **Matrices** - Comparisons across dimensions (skills × positions)
+- **Matrices** - Comparisons across dimensions (skills x positions)
 - **Progress tracking** - Learning plan completion
 - **Alerts** - Deadlines, required actions
 - **Deep dives** - All context about a specific entity
+- **Output code** - Source code for a website / dashboard / reporting framework
 
-**Key insight:** Reports should be generated from TypeDB queries, not stored separately.
-
----
-
-## Separation of Concerns
-
-### What Scripts Do (Python)
-
-```
-SCRIPT RESPONSIBILITIES
-┌────────────────────────────────────────┐
-│ Foraging:                              │
-│ - Search APIs                          │
-│ - List sources                         │
-│ - Discover links                       │
-│                                        │
-│ Ingestion:                             │
-│ - Fetch URL content                    │
-│ - Store raw HTML/text                  │
-│ - Record provenance                    │
-│ - Create artifact                      │
-│ - NO parsing, NO extraction            │
-│                                        │
-│ Queries:                               │
-│ - List artifacts                       │
-│ - List entities                        │
-│ - Pipeline views                       │
-│ - Return data for Claude to reason     │
-└────────────────────────────────────────┘
-```
-
-### What Claude Does (via SKILL.md)
-
-```
-CLAUDE RESPONSIBILITIES
-┌────────────────────────────────────────┐
-│ Sensemaking:                           │
-│ - Read artifact content                │
-│ - Extract entities                     │
-│ - Create fragments                     │
-│ - Write notes                          │
-│ - Flag uncertainties                   │
-│                                        │
-│ Analysis:                              │
-│ - Query across notes                   │
-│ - Generate synthesis                   │
-│ - Compare to profiles                  │
-│ - Make recommendations                 │
-│                                        │
-│ Interaction:                           │
-│ - Present findings to user             │
-│ - Ask clarifying questions             │
-│ - Suggest next actions                 │
-└────────────────────────────────────────┘
-```
+**Key insight:** Reports should be generated from TypeDB data.
 
 ---
 
-## Artifact Types Registry
+## Domain Modeling Workflow
 
-Artifact types are shared across all skills. Reuse existing types rather than creating new ones.
+The **Domain Modeling Workflow** is how you *build* the artifacts that execute the curation process — it is a design-time curation process where you (A) run ingestion over source documents and design specifications generated by the domain modeler; (B) use staged sensemaking to map those documents and specifications into schema, skill prompts, and scripts; (C) use analysis to validate and evaluate performance on sample data; and (D) generate the source artifacts for the target skill as a form of reporting. 
 
-### Standard Artifact Types
+The workflow is a structured framework for performing these tasks. It should be rerun when new data comes to light to generate new versions of the skill. 
 
-| Type | Cache Dir | MIME Types | Example Uses |
-|------|-----------|------------|--------------|
-| `html` | `html/` | text/html | Job postings, web articles, company pages |
-| `pdf` | `pdf/` | application/pdf | Papers, resumes, reports, cover letters |
-| `image` | `image/` | image/* | Screenshots, figures, diagrams |
-| `json` | `json/` | application/json | API responses, structured exports |
-| `text` | `text/` | text/plain, text/markdown | Plain text content, notes |
+The 5-phase workflow captures the full design record for a skill from goal to analysis. Each phase produces TypeDB entities that link spec notes and design gaps polymorphically.
 
-### Storage Strategy
+| Phase | Entity type | Purpose |
+|-------|-------------|---------|
+| 1 | `dm-goal` + `dm-goal-eval` | What the system is for and how success is measured |
+| 2 | `dm-entity-schema` | TypeDB entity/relation/attribute types defined |
+| 3 | `dm-source-schema` | External data sources and artifact types needed |
+| 4 | `dm-derivation-skill` | Ingestion functions: artifact types in, entity types out |
+| 5 | `dm-analysis-skill` | Analysis functions: entity types queried, outputs produced |
 
-- **< 50KB:** Store inline in TypeDB `content` attribute
-- **>= 50KB:** Store in cache, reference via `cache-path`
+Spec notes (`dm-phase-spec`) and design gaps (`dm-design-gap`) link to whichever phase entity they belong to via `dm-phase-artifact` — the relation handles all five phases polymorphically.
 
-```python
-from skillful_alhazen.utils.cache import should_cache, save_to_cache
+### Phase 1: System Goal
 
-if should_cache(content):
-    cache_result = save_to_cache(artifact_id, content, mime_type)
-    # Store cache_result['cache_path'] in TypeDB
-else:
-    # Store content inline in TypeDB
+Describe the domain being modeled and the goal of the curation process in detail. First, ingest all relevant source documents pertaining to the domain and the goal. Second, based on source documents (including design specs captured from a human designer), define the goals and evaluation criteria for the domain.   
+
+> **Recommended:** Ingest source documents *before* writing the goal description. They give Claude a rich, citable evidence base — "I modeled this way because the paper describes X."
+
+#### 1a. Ingest Source Documents
+
+Here, 
+
+```bash
+# Step 1: Get the blank template, fill it out, save as domain-spec.md
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  generate-template > domain-spec.md
+# ... edit domain-spec.md in your editor ...
+
+# Step 2: Ingest the filled template
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  ingest-source-doc --domain-id $DOMAIN \
+  --file domain-spec.md --doc-type template \
+  --title "My Domain — spec"
+
+# Step 3: Ingest reference papers (PDF from local file)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  ingest-source-doc --domain-id $DOMAIN \
+  --file path/to/might-2017.pdf \
+  --doc-type paper \
+  --title "Might 2017 -- Undiagnosed Diseases Algorithm"
+
+# Step 4: Ingest inline text (e.g. pasted email)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  ingest-source-doc --domain-id $DOMAIN \
+  --text "The algorithm begins with a patient who has..." \
+  --doc-type email --title "Matt Might email 2024-03-01"
+
+# Step 5: Ingest content fetched by Playwright (JS-heavy or paywalled pages)
+# Use browser_navigate + browser_snapshot to get text, then pipe it:
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  ingest-source-doc --domain-id $DOMAIN --stdin \
+  --url "https://example.com/paper" --doc-type paper --title "..."
+# (pipe fetched text via stdin; --url is always recorded as source-uri)
+
+# Step 6: Simple direct URL fetch (urllib fallback — works for direct downloads only)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  ingest-source-doc --domain-id $DOMAIN \
+  --url "https://arxiv.org/pdf/1234.5678.pdf" \
+  --doc-type paper --title "ArXiv paper 1234.5678"
+
+# Confirm ingestion
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  list-source-docs --domain-id $DOMAIN
+
+# Read a source doc (returns content or cache-path for large files)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  show-source-doc --doc-id dm-source-doc-XXXX
+```
+
+**Input priority:** `--file` > `--stdin` > `--text` > `--url` (urllib). `--url` is always recorded as `source-uri` regardless of input method.
+
+**For JS-heavy or paywalled URLs:** Use Playwright MCP tools to fetch content, then pipe to the script:
+- Text content: `browser_navigate` → `browser_snapshot` → pass text via `--text` or `--stdin`
+- Screenshots/diagrams: `browser_take_screenshot` → save PNG → `--file screenshot.png --doc-type image`
+- PDFs: download via browser → `--file path/to/downloaded.pdf`
+
+**After ingesting source docs, Claude should read them before writing the goal description:**
+```bash
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  list-source-docs --domain-id $DOMAIN \
+  | python3 -c "import json,sys; [print(d['id'], d['name']) for d in json.load(sys.stdin)['source_docs']]"
+
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  show-source-doc --doc-id dm-source-doc-XXXX \
+  | python3 -c "import json,sys; d=json.load(sys.stdin)['doc']; print(d.get('content') or 'cached at: '+str(d.get('cache_path')))"
+```
+
+#### 1b. Define Goal and Evaluation Criteria
+
+```bash
+# Create domain (if not already done)
+DOMAIN=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  init-domain --name "my-domain" --skill my-skill \
+  --description "Complete and full description of the use case / domain of interest as an MD file. This should be verbose, rich, coherent, and complete." \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+
+# Define the system goal
+GOAL=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  define-goal --domain-id $DOMAIN \
+  --name "What information is the curation process generating? What purpose does it serve? This should be verbose, rich, coherent, and complete." \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+
+# Add an evaluation criterion
+# How would you know if the
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-evaluation \
+  --goal-id $GOAL --domain-id $DOMAIN \
+  --name "Coverage criterion" \
+  --description "What fraction of real-world cases the schema can represent." \
+  --criterion-type completeness \
+  --success-condition "For 80% of test cases, zero unknown entity types" \
+  --approach "Manual review of 20 randomly sampled real examples"
+
+# Show goal + evaluations
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  show-goal --domain-id $DOMAIN
+```
+
+### Phase 2: Entity Schema
+
+Think carefully about the domain and the goal of the curation work. What collections, domain-entities, and relations are needed to satisfy the goal. For example, if we were curating inforation about a job search, we would track positions, opportunities, candidate skills, etc. If we were curating information about disease mechanisms, we would track diseases, genes, mutataions, pathways, experiments, claims, etc. The task here is to model the main domain-specific entities needed to satisfy the curation process' goal.  
+
+```bash
+SCHEMA=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-entity-schema --domain-id $DOMAIN \
+  --name "Core entities" \
+  --description "my-domain-entity, my-domain-artifact, my-domain-relation" \
+  --feasibility yes \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+
+# Attach a TypeQL spec note
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-phase-spec --phase-id $SCHEMA \
+  --content "entity my-domain-entity sub domain-thing, owns my-domain-attr-1;"
+
+# Show the phase item with specs
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  show-phase-item --phase-id $SCHEMA
+```
+
+### Phase 3: Source Schema
+
+Think carefully about the domain, the goal, and the entities developed in phase 2. What remotely available information do you need to be able to populate the schema generated in phase 2? If we were curating information about job search , we would need to capture online job postings, contacts, emails / conversations, websites, linkedin posts + profiles etc. If we were curating disease mechanisms, we'd need Pubmed, MONDO, and Uniprot records. The task here is to model the main information sources that we would need in order to be able to describe domain-specific entities from phase 2.  
+
+```bash
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-source-schema --domain-id $DOMAIN \
+  --name "Primary data source" \
+  --description "Source API or database; one HTML/JSON artifact per ingested item" \
+  --feasibility yes
+```
+
+### Phase 4: Derivation Skills
+
+Think carefully about the processes needed to generate domain entities from sources. Capture those processes as prompts and script commands that involve database updates.  
+
+```bash
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-derivation-skill --domain-id $DOMAIN \
+  --name "ingest-source" \
+  --description "Fetch source page, store artifact, extract domain entities" \
+  --input-types "html artifact (source page)" \
+  --output-types "my-domain-entity, my-domain-artifact" \
+  --feasibility yes
+```
+
+### Phase 5: Analysis Skills
+
+Think carefully about the processes needed to understand and interpret domain entities in order to satisfy the goal of the curation pipeline. Capture those processes as prompts and script commands that involve database updates.  
+
+```bash
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-analysis-skill --domain-id $DOMAIN \
+  --name "analyze-entities" \
+  --description "Reason across ingested entities to answer the curation goal" \
+  --input-types "my-domain-entity, my-domain-relation" \
+  --output-types "Markdown report with findings and gaps flagged" \
+  --feasibility partial
+```
+
+### Cross-Phase Dependencies
+
+Use `--depends-on` to record that one phase entity builds on another:
+
+```bash
+# Derivation skill depends on the source schema
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-derivation-skill --domain-id $DOMAIN \
+  --name "ingest-secondary-source" \
+  --description "Ingest secondary data source" \
+  --input-types "json artifact (API response)" \
+  --output-types "my-domain-secondary-entity" \
+  --depends-on $SOURCE_ID
+```
+
+### Design Gaps
+
+Track mismatches and gaps for sources and scripts that are currently missing in the design. 
+
+```bash
+# Flag something missing or unclear
+GAP=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  add-phase-gap \
+  --phase-id $SCHEMA --domain-id $DOMAIN \
+  --description "No representation for 510k substantial equivalence decision text" \
+  --severity moderate \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+
+# List open gaps
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  list-phase-gaps --domain-id $DOMAIN --status open
+
+# Resolve a gap
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  resolve-phase-gap --gap-id $GAP
+```
+
+### Export
+
+```bash
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  export-design-phases --domain-id $DOMAIN \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['markdown'])"
+```
+
+The export produces a Markdown document with Phase 1 goal + evaluations, followed by sections for each phase entity with embedded spec notes and open gaps.
+
+This output, combined with all the content developed in the modeling process, should provide structured input for Claude to generate a complete set of skill artifacts for the skill. 
+
+---
+
+## Domain Lifecycle Commands
+
+```bash
+# Create a tracking project
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    init-domain --name "Scientific Literature" --description "Tracks topics and subjects reported in the scientific literature" \
+    --skill newskill
+
+# Set the Phase 0 task (what is this skill FOR?)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    set-task --domain-id dm-domain-XXXX \
+    --task "Ingest abstracts and full text papers pertaining to a specific subject into TypeDB"
+
+# List all domains
+uv run python .claude/skills/domain-modeling/domain_modeling.py list-domains
+
+# Full history: snapshots, decisions, experiments, errors
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    show-domain --id dm-domain-XXXX
 ```
 
 ---
 
-## Designing a New Domain
+## Designing the Curation Pipeline
 
 ### Step 1: Identify Entity Types
 
@@ -429,52 +588,295 @@ task-contribution sub relation,
 
 ---
 
-## Example: Job Hunting Domain
+## Runtime Process Reference
 
-### Entity Types
-- `jobhunt-company` (Thing) - An employer
-- `jobhunt-position` (Thing) - A job posting
-- `jobhunt-job-description` (Artifact) - Raw JD content
-- `jobhunt-requirement` (Fragment) - Extracted skill requirement
-- `jobhunt-fit-analysis-note` (Note) - Claude's fit assessment
-
-### Script Commands
-- `ingest-job --url` - Fetch and store job posting
-- `add-skill --name --level` - Add to your skill profile
-- `list-artifacts --status raw` - Artifacts needing analysis
-- `show-artifact --id` - Get artifact for Claude to read
-- `list-pipeline` - Show application status
-
-### Sensemaking Flow
-1. Script ingests URL → creates artifact + placeholder position
-2. User says "analyze that job posting"
-3. Claude reads artifact content
-4. Claude extracts: company, title, requirements, responsibilities
-5. Claude compares to user's skill profile
-6. Claude creates fit-analysis note with score and gaps
-7. Claude reports findings and suggests next steps
+All domain skills follow a 6-phase curation workflow. This is what the skill *does* at runtime after it has been built:
 
 ---
 
-## Example: Literature Review Domain
+### Separation of Concerns
 
-### Entity Types
-- `litreview-paper` (Thing) - A scientific paper
-- `litreview-author` (Thing) - A researcher
-- `litreview-pdf` (Artifact) - PDF content
-- `litreview-claim` (Fragment) - Key claim with evidence
-- `litreview-synthesis` (Note) - Cross-paper analysis
+#### What Scripts Do (Python)
 
-### Script Commands
-- `ingest-paper --doi` - Fetch from DOI
-- `ingest-paper --pmid` - Fetch from PubMed
-- `search-papers --query` - Search literature databases
-- `list-papers --collection` - Papers in a collection
-- `show-paper --id` - Full paper details
+```
+SCRIPT RESPONSIBILITIES
++----------------------------------------+
+| Discover:                              |
+| - Search APIs                          |
+| - List sources                         |
+| - Discover links                       |
+|                                        |
+| Ingestion:                             |
+| - Fetch URL content                    |
+| - Store raw HTML/text                  |
+| - Record provenance                    |
+| - Create artifact                      |
+| - NO parsing, NO extraction            |
+|                                        |
+| Queries:                               |
+| - List artifacts                       |
+| - List entities                        |
+| - Pipeline views                       |
+| - Return data for Claude to reason     |
++----------------------------------------+
+```
+
+#### What Claude Does (via SKILL.md)
+
+```
+CLAUDE RESPONSIBILITIES
++----------------------------------------+
+| Sensemaking:                           |
+| - Read artifact content                |
+| - Extract entities                     |
+| - Create fragments                     |
+| - Write notes                          |
+| - Flag uncertainties                   |
+|                                        |
+| Analysis:                              |
+| - Query across notes                   |
+| - Generate synthesis                   |
+| - Compare to profiles                  |
+| - Make recommendations                 |
+|                                        |
+| Interaction:                           |
+| - Present findings to user             |
+| - Ask clarifying questions             |
+| - Suggest next actions                 |
++----------------------------------------+
+```
 
 ---
 
-## User Profile Pattern
+## Iterating and Improving
+
+The full improvement loop connects live gap discovery through design decisions to automated optimization:
+
+```
+discover gap during workflow
+    |
+    v
+log gap (typedb-notebook record-gap)          <-- surface-level observation
+    |
+    v
+snapshot-skill (captures current skill files)
+    |
+    +-- add-decision (what schema change fixes it?)
+    |       |
+    |       +-- add-rationale (why this fix?)
+    |       +-- link-gap (connect observed gap to fixing decision)
+    |
+    +-- start-experiment (test the fix)
+    |       |
+    |       +-- record-result (metric + value)
+    |       +-- complete-experiment
+    |
+    +-- add-phase-gap (structural gap in a phase spec)  <-- design-time observation
+    |       |
+    |       +-- resolve-phase-gap (once addressed)
+    |
+    v
+export-design / export-design-phases (Markdown changelog)
+```
+
+### Two Gap Mechanisms — One Improvement Loop
+
+| Mechanism | Command | When to Use |
+|-----------|---------|-------------|
+| **Observed gap** | `typedb-notebook record-gap` | Claude had to ask for something that should be stored, or made a wrong inference — logged during live skill use |
+| **Phase gap** | `domain-modeling add-phase-gap` | A structural gap discovered while speccing a phase — logged during design review |
+| **Link them** | `domain-modeling link-gap` | Connect an observed gap (skilllog) to the design decision that fixes it |
+
+### Skill Snapshots
+
+```bash
+# Capture all skill files (auto-detects git: commit, branch, remote, message)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    snapshot-skill --domain-id dm-domain-XXXX \
+    --skill-dir local_skills/newskill/ --version v1.0 --repo-dir .
+# Returns: snapshot ID + list of captured files (schema, script, prompts, tests)
+
+# List all snapshots for a domain
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    list-versions --domain-id dm-domain-XXXX
+
+# List files captured in a snapshot
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    list-files --snapshot-id dm-skill-snapshot-YYYY
+
+# Show content of a captured file
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    show-file --file-id dm-skill-file-ZZZZ
+
+# Attach a plan document (Claude's design plan) to a snapshot
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    add-plan --snapshot-id dm-skill-snapshot-YYYY \
+    --plan-file ~/.claude/plans/my-plan.md --order 1 \
+    --description "Initial implementation plan"
+
+# Install post-commit hook (auto-snapshots skill on every git commit)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    install-hook --domain-id dm-domain-XXXX \
+    --skill-dir local_skills/newskill/ --repo-dir .
+chmod +x .git/hooks/post-commit
+```
+
+**Idempotency:** `snapshot-skill` checks the current commit SHA; if already snapshotted for this domain, it returns the existing record without duplicating.
+
+**Large files:** Files >50KB are stored in the file cache (`~/.alhazen/cache/text/`) and referenced via `cache-path`. Smaller files are stored inline in TypeDB.
+
+### Design Decisions
+
+```bash
+# Record a decision (types: entity | relation | attribute | hierarchy | constraint)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    add-decision --domain-id dm-domain-XXXX --type entity \
+    --summary "Use dm-domain sub collection to group all design artifacts" \
+    --version-id dm-skill-snapshot-YYYY \
+    --alternatives "sub domain-thing: rejected, lacks collection grouping semantics"
+
+# Add Claude's reasoning
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    add-rationale --decision-id dm-decision-ZZZZ \
+    --rationale "collection already has collection-membership and nesting relations; reusing these avoids duplicating grouping infrastructure" \
+    --alternatives "domain-thing would require custom grouping relations"
+
+# Link a schema-gap (from skilllog) as motivation for the decision
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    link-gap --decision-id dm-decision-ZZZZ --gap-id gap-abc123
+
+# List decisions (optionally filter by type)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    list-decisions --domain-id dm-domain-XXXX --type entity
+```
+
+### Experiments and Metrics
+
+```bash
+# Start an experiment
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    start-experiment --domain-id dm-domain-XXXX \
+    --hypothesis "v1.0 schema supports all required newskill queries" \
+    --version-id dm-skill-snapshot-YYYY
+
+# Record a quantitative result
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    record-result --experiment-id dm-experiment-AAAA \
+    --metric coverage --value 0.92 \
+    --notes "8 of 100 test cases failed on missing causal-link relation"
+
+# Mark complete
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    complete-experiment --experiment-id dm-experiment-AAAA
+
+# List experiments
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    list-experiments --domain-id dm-domain-XXXX --status running
+```
+
+### Representation Errors
+
+```bash
+# Report an error (error types: type-mismatch | missing-concept | wrong-cardinality |
+#   wrong-inheritance | semantic-ambiguity | over-generalization | under-generalization)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    report-error --domain-id dm-domain-XXXX \
+    --type missing-concept \
+    --summary "No entity type for 510k predicate device -- couldn't link predicate lineage" \
+    --severity moderate --version-id dm-skill-snapshot-YYYY
+
+# Resolve an error (link to the fixing decision)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    resolve-error --error-id dm-error-BBBB --decision-id dm-decision-ZZZZ
+
+# List open errors
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    list-errors --domain-id dm-domain-XXXX --status open
+```
+
+### Skill Gap Logging (typedb-notebook)
+
+Record deficiencies discovered during skill use. When Claude has to ask something that should have been stored, or makes an incorrect inference, log it as a `schema-gap` for systematic improvement.
+
+| Gap Type | When to Log |
+|----------|-------------|
+| `missing-user-context` | Had to ask the user for something that should be in the profile |
+| `missing-entity-type` | No TypeDB type exists for something we needed to store |
+| `missing-attribute` | Existing type lacks an attribute the workflow needed |
+| `unclear-workflow` | Sensemaking instructions were ambiguous or produced wrong output |
+| `incorrect-inference` | Claude's reasoning produced a factually wrong result |
+
+```bash
+# Record a gap
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py record-gap \
+    --skill jobhunt \
+    --type missing-user-context \
+    --description "User home location not stored; had to ask about on-site viability" \
+    --severity moderate \
+    --example "GenBio AI on-site Palo Alto role: asked user if Palo Alto commute was viable"
+
+# List open gaps for a skill
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py list-gaps --skill jobhunt
+
+# List all open gaps
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py list-gaps
+
+# Close a gap once addressed
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py close-gap \
+    --id "gap-abc123" --status addressed
+```
+
+The `skill-model` entity (auto-created by `record-gap`) is the first-class representation of each skill in the knowledge graph. Multiple gaps can be linked to one skill-model.
+
+Link an observed gap to the design decision that fixes it:
+
+```bash
+# Step 1: Record the gap (skilllog)
+uv run python .claude/skills/typedb-notebook/typedb_notebook.py record-gap \
+    --skill newskill --type missing-entity-type \
+    --description "No type for 510k predicate device"
+
+# Step 2: Link it to the fixing decision (domain-modeling)
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+    link-gap --decision-id dm-decision-ZZZZ --gap-id gap-abc123
+```
+
+The gap ID is stored as a `dm-linked-gap-id` attribute (multi-valued: one per linked gap). The `show-domain` output includes linked gap IDs for cross-referencing.
+
+---
+
+## Reference: Artifact Types Registry
+
+Artifact types are shared across all skills. Reuse existing types rather than creating new ones.
+
+### Standard Artifact Types
+
+| Type | Cache Dir | MIME Types | Example Uses |
+|------|-----------|------------|--------------|
+| `html` | `html/` | text/html | Job postings, web articles, company pages |
+| `pdf` | `pdf/` | application/pdf | Papers, resumes, reports, cover letters |
+| `image` | `image/` | image/* | Screenshots, figures, diagrams |
+| `json` | `json/` | application/json | API responses, structured exports |
+| `text` | `text/` | text/plain, text/markdown | Plain text content, notes |
+
+### Storage Strategy
+
+- **< 50KB:** Store inline in TypeDB `content` attribute
+- **>= 50KB:** Store in cache, reference via `cache-path`
+
+```python
+from skillful_alhazen.utils.cache import should_cache, save_to_cache
+
+if should_cache(content):
+    cache_result = save_to_cache(artifact_id, content, mime_type)
+    # Store cache_result['cache_path'] in TypeDB
+else:
+    # Store content inline in TypeDB
+```
+
+---
+
+## Reference: User Profile Pattern
 
 For domains where sensemaking depends on stable facts about the user — location,
 constraints, preferences — define a profile entity so Claude never has to ask.
@@ -518,7 +920,7 @@ depends on user context:
 
 ```markdown
 ## Sensemaking Workflow
-1. **Load seeker profile** (call FIRST — never ask the user for this information)
+1. **Load seeker profile** (call FIRST -- never ask the user for this information)
    script.py show-profile
    Use result to automatically assess: location viability, constraint alignment, gaps
 ```
@@ -534,57 +936,56 @@ a complete example (`jobhunt-seeker sub agent` with `home-location`, `salary-flo
 
 ---
 
-## Skill Quality Tracking
+## Reference: Schema Entity Map
 
-Record deficiencies discovered during skill use. When Claude has to ask something
-that should have been stored, or makes an incorrect inference, log it as a
-`schema-gap` for systematic improvement.
+| Entity | Base Type | When to Create |
+|--------|-----------|----------------|
+| `dm-domain` | `collection` | Once per skill/domain being designed |
+| `dm-skill-snapshot` | `artifact` | Umbrella snapshot of full skill at one git commit |
+| `dm-skill-file` | `artifact` | One captured file within a snapshot |
+| `dm-design-decision` | `domain-thing` | Each significant schema choice |
+| `dm-design-rationale` | `note` | Claude's reasoning for a decision |
+| `dm-experiment` | `domain-thing` | Each hypothesis being tested |
+| `dm-experiment-result` | `note` | Quantitative/qualitative observation |
+| `dm-representation-error` | `domain-thing` | Each case where schema failed real data |
 
-### What to Log
+### Captured File Types
 
-| Gap Type | When to Log |
-|----------|-------------|
-| `missing-user-context` | Had to ask the user for something that should be in the profile |
-| `missing-entity-type` | No TypeDB type exists for something we needed to store |
-| `missing-attribute` | Existing type lacks an attribute the workflow needed |
-| `unclear-workflow` | Sensemaking instructions were ambiguous or produced wrong output |
-| `incorrect-inference` | Claude's reasoning produced a factually wrong result |
+| `dm-file-type` | Files captured | `format` |
+|---|---|---|
+| `schema` | `schema.tql` | `typeql` |
+| `script` | `<skill-name>.py` (main CLI) | `python` |
+| `prompt-short` | `SKILL.md` | `markdown` |
+| `prompt-full` | `USAGE.md` | `markdown` |
+| `manifest` | `skill.yaml` | `yaml` |
+| `test` | `tests/*.py` | `python` |
+| `experiment` | `experiments/*.py`, `experiments/*.ipynb` | `python` / `ipynb` |
+| `plan` | Added explicitly via `add-plan` | `markdown` |
 
-### Commands (typedb-notebook skill)
-
-```bash
-# Record a gap
-uv run python .claude/skills/typedb-notebook/typedb_notebook.py record-gap \
-    --skill jobhunt \
-    --type missing-user-context \
-    --description "User home location not stored; had to ask about on-site viability" \
-    --severity moderate \
-    --example "GenBio AI on-site Palo Alto role: asked user if Palo Alto commute was viable"
-
-# List open gaps for a skill
-uv run python .claude/skills/typedb-notebook/typedb_notebook.py list-gaps --skill jobhunt
-
-# List all open gaps
-uv run python .claude/skills/typedb-notebook/typedb_notebook.py list-gaps
-
-# Close a gap once addressed
-uv run python .claude/skills/typedb-notebook/typedb_notebook.py close-gap \
-    --id "gap-abc123" --status addressed
-```
-
-### System Improvement Loop
-
-1. Claude encounters a gap during a workflow (asks user, makes wrong inference)
-2. Immediately record it: `typedb-notebook record-gap --skill X --type Y --description "..."`
-3. Periodically review: `typedb-notebook list-gaps` — use open gaps as improvement backlog
-4. Fix the schema/workflow/profile, then close: `typedb-notebook close-gap --id X --status addressed`
-
-The `skill-model` entity (auto-created by `record-gap`) is the first-class representation
-of each skill in the knowledge graph. Multiple gaps can be linked to one skill-model.
+**Note:** `dm-file-type = "experiment"` means a script in the skill's `experiments/` directory (captured as an artifact). This is distinct from `dm-experiment` entities, which track design hypotheses tested in TypeDB.
 
 ---
 
-## Dashboard Design Principles
+## Reference: TypeQL Query Examples
+
+```typeql
+# List all open design gaps for a domain
+match $g isa dm-design-gap, has dm-error-status "open";
+      $d isa dm-domain, has id "dm-domain-XXXX";
+      (subject: $g, domain: $d) isa dm-in-domain;
+fetch { "id": $g.id, "description": $g.description,
+        "severity": $g.dm-error-severity, "phase": $g.dm-phase-number };
+
+# Trace a derivation skill's outputs
+match $sk isa dm-derivation-skill, has id "dm-derivation-skill-YYYY";
+fetch { "id": $sk.id, "name": $sk.name,
+        "inputs": $sk.dm-input-types, "outputs": $sk.dm-output-types,
+        "feasibility": $sk.dm-feasibility };
+```
+
+---
+
+## Reference: Dashboard Design Principles
 
 1. **Query the graph** - Don't duplicate data; dashboards query TypeDB
 2. **Pipeline views** - Show entities moving through states
@@ -594,7 +995,7 @@ of each skill in the knowledge graph. Multiple gaps can be linked to one skill-m
 
 ---
 
-## Documenting Your New Domain
+## Reference: Documenting Your New Domain
 
 Every new domain skill needs documentation at four levels:
 
@@ -646,247 +1047,7 @@ When you modify a schema:
 
 ---
 
----
-
-## Design Process Tracking
-
-The domain-modeling skill includes a Python CLI for tracking **why** a schema looks the way it does — what choices were made, what alternatives were considered, what experiments tested the design, and what errors revealed its limits.
-
-This is separate from the curation pattern guidance above. Use it when iterating on a new skill's TypeDB schema.
-
-### When to Use Design Tracking
-
-- **New skill development** — captures design rationale before it's forgotten
-- **Schema iteration** — records what changed between versions and why
-- **LLM extraction accuracy** — run experiments comparing schema versions against real examples
-- **Upstream reporting** — `export-design` produces a Markdown changelog you can share or commit
-
-### Workflow
-
-```
-init-domain
-    |
-    +-- set-task  (Phase 0: natural language goal for the skill)
-    |
-    v
-snapshot-skill  (captures all skill files; auto-reads git metadata)
-    |
-    +-- add-plan  (attach Claude's design plan document)
-    |
-    +-- add-decision  (entity / relation / attribute / hierarchy / constraint)
-    |       |
-    |       +-- add-rationale  (Claude's reasoning for the decision)
-    |       +-- link-gap       (link motivating schema-gap from skilllog)
-    |
-    +-- start-experiment
-    |       |
-    |       +-- record-result  (metric + value + notes)
-    |       +-- complete-experiment
-    |
-    +-- report-error  (schema failure case)
-    |       |
-    |       +-- resolve-error  (links to the fixing decision)
-    |
-    v
-next git commit -> auto-snapshot-skill (via install-hook)
-    |
-    v
-export-design  (annotated Markdown changelog, one section per version)
-```
-
-### Captured File Types
-
-| `dm-file-type` | Files captured | `format` |
-|---|---|---|
-| `schema` | `schema.tql` | `typeql` |
-| `script` | `<skill-name>.py` (main CLI) | `python` |
-| `prompt-short` | `SKILL.md` | `markdown` |
-| `prompt-full` | `USAGE.md` | `markdown` |
-| `manifest` | `skill.yaml` | `yaml` |
-| `test` | `tests/*.py` | `python` |
-| `experiment` | `experiments/*.py`, `experiments/*.ipynb` | `python` / `ipynb` |
-| `plan` | Added explicitly via `add-plan` | `markdown` |
-
-**Note:** `dm-file-type = "experiment"` means a script in the skill's `experiments/` directory (captured as an artifact). This is distinct from `dm-experiment` entities, which track design hypotheses tested in TypeDB.
-
-### Command Reference
-
-#### Domain Lifecycle
-
-```bash
-# Create a tracking project
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    init-domain --name "FDA regulatory" --description "Tracks 510k/MAUDE/recalls" \
-    --skill newskill
-
-# Set the Phase 0 task (what is this skill FOR?)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    set-task --domain-id dm-domain-XXXX \
-    --task "Ingest FDA 510k clearances, MAUDE adverse events, and device recalls into TypeDB"
-
-# List all domains
-uv run python .claude/skills/domain-modeling/domain_modeling.py list-domains
-
-# Full history: snapshots, decisions, experiments, errors
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    show-domain --id dm-domain-XXXX
-```
-
-#### Skill Snapshots
-
-```bash
-# Capture all skill files (auto-detects git: commit, branch, remote, message)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    snapshot-skill --domain-id dm-domain-XXXX \
-    --skill-dir local_skills/newskill/ --version v1.0 --repo-dir .
-# Returns: snapshot ID + list of captured files (schema, script, prompts, tests)
-
-# List all snapshots for a domain
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    list-versions --domain-id dm-domain-XXXX
-
-# List files captured in a snapshot
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    list-files --snapshot-id dm-skill-snapshot-YYYY
-
-# Show content of a captured file
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    show-file --file-id dm-skill-file-ZZZZ
-
-# Attach a plan document (Claude's design plan) to a snapshot
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    add-plan --snapshot-id dm-skill-snapshot-YYYY \
-    --plan-file ~/.claude/plans/my-plan.md --order 1 \
-    --description "Initial implementation plan"
-
-# Install post-commit hook (auto-snapshots skill on every git commit)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    install-hook --domain-id dm-domain-XXXX \
-    --skill-dir local_skills/newskill/ --repo-dir .
-chmod +x .git/hooks/post-commit
-```
-
-**Idempotency:** `snapshot-skill` checks the current commit SHA; if already snapshotted for this domain, it returns the existing record without duplicating.
-
-**Large files:** Files >50KB are stored in the file cache (`~/.alhazen/cache/text/`) and referenced via `cache-path`. Smaller files are stored inline in TypeDB.
-
-#### Design Decisions
-
-```bash
-# Record a decision (types: entity | relation | attribute | hierarchy | constraint)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    add-decision --domain-id dm-domain-XXXX --type entity \
-    --summary "Use dm-domain sub collection to group all design artifacts" \
-    --version-id dm-skill-snapshot-YYYY \
-    --alternatives "sub domain-thing: rejected, lacks collection grouping semantics"
-
-# Add Claude's reasoning
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    add-rationale --decision-id dm-decision-ZZZZ \
-    --rationale "collection already has collection-membership and nesting relations; reusing these avoids duplicating grouping infrastructure" \
-    --alternatives "domain-thing would require custom grouping relations"
-
-# Link a schema-gap (from skilllog) as motivation for the decision
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    link-gap --decision-id dm-decision-ZZZZ --gap-id gap-abc123
-
-# List decisions (optionally filter by type)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    list-decisions --domain-id dm-domain-XXXX --type entity
-```
-
-#### Experiments
-
-```bash
-# Start an experiment
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    start-experiment --domain-id dm-domain-XXXX \
-    --hypothesis "v1.0 schema supports all required newskill queries" \
-    --version-id dm-skill-snapshot-YYYY
-
-# Record a quantitative result
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    record-result --experiment-id dm-experiment-AAAA \
-    --metric coverage --value 0.92 \
-    --notes "8 of 100 test cases failed on missing causal-link relation"
-
-# Mark complete
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    complete-experiment --experiment-id dm-experiment-AAAA
-
-# List experiments
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    list-experiments --domain-id dm-domain-XXXX --status running
-```
-
-#### Representation Errors
-
-```bash
-# Report an error (error types: type-mismatch | missing-concept | wrong-cardinality |
-#   wrong-inheritance | semantic-ambiguity | over-generalization | under-generalization)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    report-error --domain-id dm-domain-XXXX \
-    --type missing-concept \
-    --summary "No entity type for 510k predicate device — couldn't link predicate lineage" \
-    --severity moderate --version-id dm-skill-snapshot-YYYY
-
-# Resolve an error (link to the fixing decision)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    resolve-error --error-id dm-error-BBBB --decision-id dm-decision-ZZZZ
-
-# List open errors
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    list-errors --domain-id dm-domain-XXXX --status open
-```
-
-#### Export
-
-```bash
-# Export annotated Markdown design changelog
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    export-design --domain-id dm-domain-XXXX \
-    | python3 -c "import json,sys; print(json.load(sys.stdin)['markdown'])"
-```
-
-The export produces one Markdown section per skill snapshot (ordered by creation time), with decisions, rationales, experiments, and errors nested under their snapshot. Unversioned items appear at the end.
-
-### Schema Entity Map
-
-| Entity | Base Type | When to Create |
-|--------|-----------|----------------|
-| `dm-domain` | `collection` | Once per skill/domain being designed |
-| `dm-skill-snapshot` | `artifact` | Umbrella snapshot of full skill at one git commit |
-| `dm-skill-file` | `artifact` | One captured file within a snapshot |
-| `dm-design-decision` | `domain-thing` | Each significant schema choice |
-| `dm-design-rationale` | `note` | Claude's reasoning for a decision |
-| `dm-experiment` | `domain-thing` | Each hypothesis being tested |
-| `dm-experiment-result` | `note` | Quantitative/qualitative observation |
-| `dm-representation-error` | `domain-thing` | Each case where schema failed real data |
-
-### Integration with Skilllog
-
-Schema-gaps recorded via `typedb-notebook record-gap` can be linked to design decisions:
-
-```bash
-# Record a gap (skilllog)
-uv run python .claude/skills/typedb-notebook/typedb_notebook.py record-gap \
-    --skill newskill --type missing-entity-type \
-    --description "No type for 510k predicate device"
-
-# Link it to the fixing decision (domain-modeling)
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-    link-gap --decision-id dm-decision-ZZZZ --gap-id gap-abc123
-```
-
-The gap ID is stored as a `dm-linked-gap-id` attribute (multi-valued: one per linked gap). The `show-domain` output includes linked gap IDs for cross-referencing.
-
-### Integration with TextGrad
-
-The `export-design` Markdown output enriches TextGrad skill optimization. When optimizing a skill's SKILL.md instructions, the design changelog explains *why* the schema looks the way it does — which constraints are deliberate, which alternatives were rejected, and which experiments validated the current design. Paste the export output as additional context when running `skill_optimizer.py`.
-
----
-
-## When to Create a New Domain
+## Reference: When to Create a New Domain
 
 Create a new domain skill when:
 1. You have a **specific information type** to track (papers, jobs, news, etc.)
@@ -902,162 +1063,45 @@ Don't create a domain for:
 
 ---
 
-## 5-Phase System Design Workflow
+## Examples: Job Hunting Domain
 
-The 5-phase workflow captures the full design record for a skill from goal to analysis. Each phase produces TypeDB entities that link spec notes and design gaps polymorphically.
+### Entity Types
+- `jobhunt-company` (Thing) - An employer
+- `jobhunt-position` (Thing) - A job posting
+- `jobhunt-job-description` (Artifact) - Raw JD content
+- `jobhunt-requirement` (Fragment) - Extracted skill requirement
+- `jobhunt-fit-analysis-note` (Note) - Claude's fit assessment
 
-| Phase | Entity type | Purpose |
-|-------|-------------|---------|
-| 1 | `dm-goal` + `dm-goal-eval` | What the system is for and how success is measured |
-| 2 | `dm-entity-schema` | TypeDB entity/relation/attribute types defined |
-| 3 | `dm-source-schema` | External data sources and artifact types needed |
-| 4 | `dm-derivation-skill` | Ingestion functions: artifact types in, entity types out |
-| 5 | `dm-analysis-skill` | Analysis functions: entity types queried, outputs produced |
+### Script Commands
+- `ingest-job --url` - Fetch and store job posting
+- `add-skill --name --level` - Add to your skill profile
+- `list-artifacts --status raw` - Artifacts needing analysis
+- `show-artifact --id` - Get artifact for Claude to read
+- `list-pipeline` - Show application status
 
-Spec notes (`dm-phase-spec`) and design gaps (`dm-design-gap`) link to whichever phase entity they belong to via `dm-phase-artifact` -- the relation handles all five phases polymorphically.
+### Sensemaking Flow
+1. Script ingests URL -> creates artifact + placeholder position
+2. User says "analyze that job posting"
+3. Claude reads artifact content
+4. Claude extracts: company, title, requirements, responsibilities
+5. Claude compares to user's skill profile
+6. Claude creates fit-analysis note with score and gaps
+7. Claude reports findings and suggests next steps
 
-### Phase 1: System Goal
+---
 
-```bash
-# Create domain (if not already done)
-DOMAIN=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  init-domain --name "my-domain" --skill my-skill \
-  --description "Short description of what this domain tracks" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+## Examples: Literature Review Domain
 
-# Define the system goal
-GOAL=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  define-goal --domain-id $DOMAIN \
-  --name "High-level goal for the curation" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+### Entity Types
+- `litreview-paper` (Thing) - A scientific paper
+- `litreview-author` (Thing) - A researcher
+- `litreview-pdf` (Artifact) - PDF content
+- `litreview-claim` (Fragment) - Key claim with evidence
+- `litreview-synthesis` (Note) - Cross-paper analysis
 
-# Add an evaluation criterion
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-evaluation \
-  --goal-id $GOAL --domain-id $DOMAIN \
-  --name "Coverage criterion" \
-  --description "What fraction of real-world cases the schema can represent." \
-  --criterion-type completeness \
-  --success-condition "For 80% of test cases, zero unknown entity types" \
-  --approach "Manual review of 20 randomly sampled real examples"
-
-# Show goal + evaluations
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  show-goal --domain-id $DOMAIN
-```
-
-### Phase 2: Entity Schema
-
-```bash
-SCHEMA=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-entity-schema --domain-id $DOMAIN \
-  --name "Core entities" \
-  --description "my-domain-entity, my-domain-artifact, my-domain-relation" \
-  --feasibility yes \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-
-# Attach a TypeQL spec note
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-phase-spec --phase-id $SCHEMA \
-  --content "entity my-domain-entity sub domain-thing, owns my-domain-attr-1;"
-
-# Show the phase item with specs
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  show-phase-item --phase-id $SCHEMA
-```
-
-### Phase 3: Source Schema
-
-```bash
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-source-schema --domain-id $DOMAIN \
-  --name "Primary data source" \
-  --description "Source API or database; one HTML/JSON artifact per ingested item" \
-  --feasibility yes
-```
-
-### Phase 4: Derivation Skills
-
-```bash
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-derivation-skill --domain-id $DOMAIN \
-  --name "ingest-source" \
-  --description "Fetch source page, store artifact, extract domain entities" \
-  --input-types "html artifact (source page)" \
-  --output-types "my-domain-entity, my-domain-artifact" \
-  --feasibility yes
-```
-
-### Phase 5: Analysis Skills
-
-```bash
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-analysis-skill --domain-id $DOMAIN \
-  --name "analyze-entities" \
-  --description "Reason across ingested entities to answer the curation goal" \
-  --input-types "my-domain-entity, my-domain-relation" \
-  --output-types "Markdown report with findings and gaps flagged" \
-  --feasibility partial
-```
-
-### Cross-Phase Dependencies
-
-Use `--depends-on` to record that one phase entity builds on another:
-
-```bash
-# Derivation skill depends on the source schema
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-derivation-skill --domain-id $DOMAIN \
-  --name "ingest-secondary-source" \
-  --description "Ingest secondary data source" \
-  --input-types "json artifact (API response)" \
-  --output-types "my-domain-secondary-entity" \
-  --depends-on $SOURCE_ID
-```
-
-### Design Gaps
-
-```bash
-# Flag something missing or unclear
-GAP=$(uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  add-phase-gap \
-  --phase-id $SCHEMA --domain-id $DOMAIN \
-  --description "No representation for 510k substantial equivalence decision text" \
-  --severity moderate \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-
-# List open gaps
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  list-phase-gaps --domain-id $DOMAIN --status open
-
-# Resolve a gap
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  resolve-phase-gap --gap-id $GAP
-```
-
-### Export
-
-```bash
-uv run python .claude/skills/domain-modeling/domain_modeling.py \
-  export-design-phases --domain-id $DOMAIN \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['markdown'])"
-```
-
-The export produces a Markdown document with Phase 1 goal + evaluations, followed by sections for each phase entity with embedded spec notes and open gaps.
-
-### TypeQL Query Examples
-
-```typeql
-# List all open design gaps for a domain
-match $g isa dm-design-gap, has dm-error-status "open";
-      $d isa dm-domain, has id "dm-domain-XXXX";
-      (subject: $g, domain: $d) isa dm-in-domain;
-fetch { "id": $g.id, "description": $g.description,
-        "severity": $g.dm-error-severity, "phase": $g.dm-phase-number };
-
-# Trace a derivation skill's outputs
-match $sk isa dm-derivation-skill, has id "dm-derivation-skill-YYYY";
-fetch { "id": $sk.id, "name": $sk.name,
-        "inputs": $sk.dm-input-types, "outputs": $sk.dm-output-types,
-        "feasibility": $sk.dm-feasibility };
-```
+### Script Commands
+- `ingest-paper --doi` - Fetch from DOI
+- `ingest-paper --pmid` - Fetch from PubMed
+- `search-papers --query` - Search literature databases
+- `list-papers --collection` - Papers in a collection
+- `show-paper --id` - Full paper details

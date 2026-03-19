@@ -1,0 +1,38 @@
+appId: io.sciknow.skillful-alhazen
+productName: Skillful-Alhazen
+copyright: Copyright 2026 SciKnow
+
+directories:
+  buildResources: electron/assets
+  output: dist-electron
+
+files:
+  - ".next/standalone/**/*"
+  - ".next/static/**/*"
+  - "public/**/*"
+  - "electron/**/*"
+  - "package.json"
+
+# Copy .next/static into the standalone directory (Next.js standalone doesn't include it by default)
+extraFiles:
+  - from: ".next/static"
+    to: ".next/standalone/.next/static"
+  - from: "public"
+    to: ".next/standalone/public"
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+
+win:
+  target:
+    - nsis
+
+linux:
+  target:
+    - AppImage
+
+# electron-builder needs to know the main entry point
+# This matches the "main" field we add to package.json
