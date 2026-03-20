@@ -546,6 +546,43 @@ cd deploy
 
 When Claude makes a mistake, add it to this section so it doesn't happen again.
 
+### Domain-Modeling: Record Design Gaps After Every Plan
+
+**Whenever a Claude plan creates, updates, or changes the design of a skill, record any design gaps discovered during implementation in the domain-modeling knowledge graph.**
+
+This includes:
+- Plans that add new entity types, relations, or attributes to a skill schema
+- Plans that fix bugs caused by missing constraints, null values, or incorrect data types
+- Plans that change dashboard components in ways that reveal schema/UI mismatches
+- Plans that discover that a skill's data model is incomplete or ambiguous
+
+**After completing a plan**, run:
+```bash
+# 1. Find or create the domain for the affected skill
+uv run python .claude/skills/domain-modeling/domain_modeling.py list-domains 2>/dev/null \
+    | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin),indent=2))"
+
+# 2. Find the relevant phase item (entity schema, source schema, etc.)
+uv run python .claude/skills/domain-modeling/domain_modeling.py show-domain \
+    --id <domain_id> 2>/dev/null \
+    | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin),indent=2))"
+
+# 3. Record the gap
+uv run python .claude/skills/domain-modeling/domain_modeling.py add-phase-gap \
+    --phase-id <phase_id> \
+    --domain-id <domain_id> \
+    --description "What was missing, what broke, what the fix was, and the general pattern to avoid." \
+    --severity minor|moderate|critical
+```
+
+**What makes a good gap description:**
+- What was absent from the schema or code (e.g., "status attribute has no default or required constraint")
+- What broke as a result (e.g., "badge component called .toLowerCase() on null, crashing the page")
+- What fix was applied (e.g., "added null guard to getBadgeColor")
+- The generalizable pattern (e.g., "any optional string rendered in a badge must guard against null")
+
+**Severity guide:** `minor` = cosmetic/annoyance, `moderate` = feature broken but workaround exists, `critical` = data loss or complete page crash.
+
 ### TypeDB 3.x Query Notes
 - **Fetch syntax** - Use `fetch { "key": $var.attr };` JSON-style (NOT `fetch $var: attr1, attr2;` — that is 2.x syntax)
 - **Abstract sub-entities** - Syntax is `entity X @abstract, sub Y,` (comma between `@abstract` and `sub`) — **SVL14: Y must also be abstract**; `domain-thing` is concrete so entities subtyping it cannot be `@abstract`
@@ -554,6 +591,9 @@ When Claude makes a mistake, add it to this section so it doesn't happen again.
 - **Fetch results are plain dicts** - No `.get("value")` unwrapping needed; access keys directly
 - **Delete entity/relation syntax** - Use `delete $x;` (NOT `delete $x isa type;` — the `isa` qualifier in the delete clause is invalid in 3.x and causes a parse error)
 - **Delete has-attribute syntax** - Use `delete has $v of $e;` (NOT `delete $e has attr $v;` — causes "expected OF" parse error)
+- **`entity` is reserved in match clauses** - Cannot use `$x isa entity, has id ...` — `entity` is a TypeQL keyword, not a type label. Use `$x isa identifiable-entity, has id ...` to match any entity by id regardless of concrete type
+- **Entity inequality** - Cannot compare entity variables with `!=` directly (causes [REP1] error). Compare id attributes: `$a has id $id1; $b has id $id2; $id1 != $id2;`
+- **Note linking relation** - Use `(note: $n, subject: $e) isa aboutness` to attach a note to an entity (NOT `isa annotation` — that relation does not exist in the alhazen schema). `identifiable-entity` plays `aboutness:subject`; `note` plays `aboutness:note`
 - **Entity keyword required** - New entity type definitions MUST use `entity` keyword: `entity my-type sub domain-thing,` — without it, TypeDB throws `[SYR1] The type 'X' was not found` (even for newly defined types)
 - **No limit in fetch** - Fetch queries don't support `limit` modifier; apply limit in Python: `results[:N]`
 - **Relations before entities** - Define relations first in namespace schemas so role names resolve when entities use `plays` clauses
