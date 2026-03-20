@@ -39,6 +39,8 @@ COPY dashboard/ ./dashboard/
 # Copy skill dashboard code (only the small dashboard/ subdirs, not full repos)
 COPY local_skills/jobhunt/dashboard/ ./local_skills/jobhunt/dashboard/
 COPY local_skills/techrecon/dashboard/ ./local_skills/techrecon/dashboard/
+COPY local_skills/alg-precision-therapeutics/dashboard/ ./local_skills/alg-precision-therapeutics/dashboard/
+COPY skills/domain-modeling/dashboard/ ./local_skills/domain-modeling/dashboard/
 
 # Wire skill dashboards using real file copies (symlinks crossing the project boundary
 # cause ENOENT during Next.js build; cp avoids that entirely)
@@ -95,6 +97,8 @@ COPY local_skills/jobhunt/jobhunt.py ./.claude/skills/jobhunt/
 COPY local_skills/jobhunt/job_forager.py ./.claude/skills/jobhunt/
 COPY skills/typedb-notebook/typedb_notebook.py ./.claude/skills/typedb-notebook/
 COPY local_skills/techrecon/techrecon.py ./.claude/skills/techrecon/
+COPY local_skills/alg-precision-therapeutics/alg_precision_therapeutics.py ./.claude/skills/alg-precision-therapeutics/
+COPY skills/domain-modeling/domain_modeling.py ./.claude/skills/domain-modeling/
 # Copy Node.js build and dependencies
 COPY --from=node-builder /app/dashboard/.next ./.next
 COPY --from=node-builder /app/dashboard/public ./public
