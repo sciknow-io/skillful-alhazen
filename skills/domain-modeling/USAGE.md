@@ -412,7 +412,30 @@ uv run python .claude/skills/domain-modeling/domain_modeling.py \
 
 The export produces a Markdown document with Phase 1 goal + evaluations, followed by sections for each phase entity with embedded spec notes and open gaps.
 
-This output, combined with all the content developed in the modeling process, should provide structured input for Claude to generate a complete set of skill artifacts for the skill. 
+#### docs/ Convention — Save as the Skill's Design Document
+
+As the **Phase 5 reporting artifact**, the exported Markdown should be saved to `docs/design.md` inside the skill directory. This file becomes the authoritative design record for the skill — readable by humans and by future Claude sessions.
+
+```bash
+# Save the export directly to the skill's docs/ file
+mkdir -p skills/$SKILL_NAME/docs
+uv run python .claude/skills/domain-modeling/domain_modeling.py \
+  export-design-phases --domain-id $DOMAIN \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['markdown'])" \
+  > skills/$SKILL_NAME/docs/design.md
+```
+
+**When to regenerate:** After adding new phase items, resolving gaps, recording design decisions, or completing a new implementation iteration — re-run the export to keep `docs/design.md` in sync with the TypeDB record.
+
+**What the file captures:**
+- System goal and evaluation criteria (Phase 1)
+- Entity schema decisions and specs (Phase 2)
+- Source schema and feasibility assessments (Phase 3)
+- Derivation skill inputs/outputs (Phase 4)
+- Analysis skill designs (Phase 5)
+- Open and resolved design gaps at each phase
+
+This output, combined with all the content developed in the modeling process, provides structured input for Claude to generate or regenerate a complete set of skill artifacts.
 
 ---
 

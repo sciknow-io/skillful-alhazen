@@ -57,6 +57,9 @@ skilllog = [
     "tiktoken>=0.7.0",
     "pyyaml>=6.0.0",
 ]
+they-said-whaaa = [
+    "youtube-transcript-api>=0.6",
+]
 semantic = [
     "voyageai>=0.3.0",
     "qdrant-client>=1.14.0",
