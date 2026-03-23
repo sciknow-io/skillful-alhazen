@@ -48,11 +48,11 @@ src/app/(*)
 !src/app/(jobhunt)
 !src/app/(techrecon)
 !src/app/(alg-precision-therapeutics)
-src/app/api/*/
-!src/app/api/typedb-status/
+src/app/api/*
+!src/app/api/typedb-status
 !src/app/api/jobhunt
 !src/app/api/techrecon
 !src/app/api/alg-precision-therapeutics
-src/components/*/
+src/components/*
 src/lib/*.ts
 !src/lib/utils.ts

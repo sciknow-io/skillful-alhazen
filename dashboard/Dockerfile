@@ -40,8 +40,8 @@ COPY dashboard/ ./dashboard/
 COPY local_skills/jobhunt/dashboard/ ./local_skills/jobhunt/dashboard/
 COPY local_skills/techrecon/dashboard/ ./local_skills/techrecon/dashboard/
 COPY local_skills/alg-precision-therapeutics/dashboard/ ./local_skills/alg-precision-therapeutics/dashboard/
-COPY skills/domain-modeling/dashboard/ ./local_skills/domain-modeling/dashboard/
-COPY skills/they-said-whaaa/dashboard/ ./local_skills/they-said-whaaa/dashboard/
+COPY skills/skill-builder/dashboard/ ./local_skills/skill-builder/dashboard/
+COPY local_skills/they-said-whaaa/dashboard/ ./local_skills/they-said-whaaa/dashboard/
 
 # Wire skill dashboards using real file copies (symlinks crossing the project boundary
 # cause ENOENT during Next.js build; cp avoids that entirely)
@@ -99,8 +99,8 @@ COPY local_skills/jobhunt/job_forager.py ./.claude/skills/jobhunt/
 COPY skills/typedb-notebook/typedb_notebook.py ./.claude/skills/typedb-notebook/
 COPY local_skills/techrecon/techrecon.py ./.claude/skills/techrecon/
 COPY local_skills/alg-precision-therapeutics/alg_precision_therapeutics.py ./.claude/skills/alg-precision-therapeutics/
-COPY skills/domain-modeling/domain_modeling.py ./.claude/skills/domain-modeling/
-COPY skills/they-said-whaaa/they_said_whaaa.py ./.claude/skills/they-said-whaaa/
+COPY skills/skill-builder/skill_builder.py ./.claude/skills/skill-builder/
+COPY local_skills/they-said-whaaa/they_said_whaaa.py ./.claude/skills/they-said-whaaa/
 # Copy Node.js build and dependencies
 COPY --from=node-builder /app/dashboard/.next ./.next
 COPY --from=node-builder /app/dashboard/public ./public
