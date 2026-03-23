@@ -3,9 +3,9 @@ name: skill-builder
 description: Design and implement domain-specific knowledge skills using the curation pattern
 ---
 
-# Domain Modeling Skill
+# Skill Builder
 
-Use this skill when designing a **new knowledge domain** for the Alhazen notebook system. This is a meta-skill that teaches how to build domain-specific skills following the curation pattern.
+Use this skill when designing and building a **new knowledge skill** for the Alhazen notebook system. This is a meta-skill that applies domain modeling to create domain-specific skills following the curation pattern.
 
 **When to use:** "design a new domain", "create a new skill", "model a new domain", "build a knowledge skill for", "add a new skill for tracking", "how do I create a skill"
 
