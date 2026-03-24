@@ -99,11 +99,39 @@ build-dashboard: build-skills ## Wire skill dashboard pages/routes/components in
 	@mkdir -p dashboard/src/components dashboard/src/lib \
 	           dashboard/src/app dashboard/src/app/api
 	@PUBLIC_SKILLS=$$(uv run python -c "import yaml; cfg=yaml.safe_load(open('skills-registry.yaml')); print(' '.join(s['name'] for s in (cfg.get('skills') or [])))"); \
+	while IFS= read -r d; do \
+	  skill_name=$$(basename "$$d" | tr -d '()'); \
+	  echo " $$PUBLIC_SKILLS " | grep -q " $$skill_name " || { \
+	    echo "  Removing stale route group: $$d"; rm -rf "$$d"; }; \
+	done < <(find dashboard/src/app -maxdepth 1 -mindepth 1 -name '(*' 2>/dev/null); \
+	while IFS= read -r d; do \
+	  skill_name=$$(basename "$$d"); \
+	  [ "$$skill_name" = "typedb-status" ] && continue; \
+	  echo " $$PUBLIC_SKILLS " | grep -q " $$skill_name " || { \
+	    echo "  Removing stale API route: $$d"; rm -rf "$$d"; }; \
+	done < <(find dashboard/src/app/api -maxdepth 1 -mindepth 1 2>/dev/null); \
+	while IFS= read -r d; do \
+	  skill_name=$$(basename "$$d"); \
+	  [ "$$skill_name" = "ui" ] && continue; \
+	  echo " $$PUBLIC_SKILLS " | grep -q " $$skill_name " || { \
+	    echo "  Removing stale component dir: $$d"; rm -rf "$$d"; }; \
+	done < <(find dashboard/src/components -maxdepth 1 -mindepth 1 2>/dev/null); \
+	for f in dashboard/src/lib/*.ts; do \
+	  [ -f "$$f" ] || [ -L "$$f" ] || continue; \
+	  skill_name=$$(basename "$$f" .ts); \
+	  [ "$$skill_name" = "utils" ] && continue; \
+	  echo " $$PUBLIC_SKILLS " | grep -q " $$skill_name " || { \
+	    echo "  Removing stale lib file: $$f"; rm -f "$$f"; }; \
+	done; \
 	for skill_dir in local_skills/*/; do \
 	  [ -d "$${skill_dir}dashboard" ] || continue; \
 	  skill_name=$$(basename $$skill_dir); \
 	  echo " $$PUBLIC_SKILLS " | grep -q " $$skill_name " || { echo "  Skipping $${skill_name} (local-registry — not wired into tracked dashboard)"; continue; }; \
 	  echo "  Wiring $${skill_name} dashboard..."; \
+	  rm -rf "dashboard/src/app/($${skill_name})" 2>/dev/null || true; \
+	  rm -rf "dashboard/src/components/$${skill_name}" 2>/dev/null || true; \
+	  rm -rf "dashboard/src/app/api/$${skill_name}" 2>/dev/null || true; \
+	  rm -f "dashboard/src/lib/$${skill_name}.ts" 2>/dev/null || true; \
 	  [ -d "$${skill_dir}dashboard/components" ] && \
 	    ln -sfn "$$(pwd)/$${skill_dir}dashboard/components" \
 	             "dashboard/src/components/$${skill_name}"; \
@@ -191,6 +219,41 @@ db-export: ## Export database to timestamped zip
 	@echo "$(BLUE)Exporting database...$(NC)"
 	uv run python $(CLAUDE_SKILLS_DIR)/typedb-notebook/typedb_notebook.py export-db --database $(TYPEDB_DATABASE)
 	@echo "$(GREEN)✓ Database exported$(NC)"
+
+.PHONY: package-skill
+package-skill: ## Bundle a skill as a distributable zip (requires SKILL=name)
+ifndef SKILL
+	@echo "$(RED)Error: SKILL variable required. Usage: make package-skill SKILL=jobhunt$(NC)"
+	@exit 1
+endif
+	@echo "$(BLUE)Packaging skill '$(SKILL)'...$(NC)"
+	uv run python scripts/package_skill.py $(SKILL)
+	@echo "$(GREEN)✓ Skill packaged$(NC)"
+
+.PHONY: install-skill
+install-skill: ## Install a skill from a zip bundle (requires ZIP=path)
+ifndef ZIP
+	@echo "$(RED)Error: ZIP variable required. Usage: make install-skill ZIP=jobhunt-v1.0.zip$(NC)"
+	@exit 1
+endif
+	@echo "$(BLUE)Installing skill from $(ZIP)...$(NC)"
+	uv run python scripts/install_skill.py $(ZIP)
+	$(MAKE) --no-print-directory deploy-claude
+	@echo "$(BLUE)Loading schema into TypeDB...$(NC)"
+	@skill_name=$$(uv run python -c "import yaml,zipfile; z=zipfile.ZipFile('$(ZIP)'); print(yaml.safe_load(z.read('skill.yaml'))['name'])" 2>/dev/null); \
+	[ -f "local_skills/$$skill_name/schema.tql" ] && \
+	  uv run python scripts/db_init.py "local_skills/$$skill_name/schema.tql" || \
+	  echo "  No schema.tql found — skipping schema load"
+	@echo "$(BLUE)Importing skill-builder knowledge graph...$(NC)"
+	@skill_name=$$(uv run python -c "import yaml,zipfile; z=zipfile.ZipFile('$(ZIP)'); print(yaml.safe_load(z.read('skill.yaml'))['name'])" 2>/dev/null); \
+	[ -f "local_skills/$$skill_name/data/skill_builder.json" ] && \
+	  uv run python $(CLAUDE_SKILLS_DIR)/skill-builder/skill_builder.py import-skill-data \
+	    --file "local_skills/$$skill_name/data/skill_builder.json" || true
+	@echo "$(BLUE)Wiring dashboard (if present)...$(NC)"
+	@skill_name=$$(uv run python -c "import yaml,zipfile; z=zipfile.ZipFile('$(ZIP)'); print(yaml.safe_load(z.read('skill.yaml'))['name'])" 2>/dev/null); \
+	[ -d "local_skills/$$skill_name/dashboard" ] && \
+	  $(MAKE) --no-print-directory build-dashboard || true
+	@echo "$(GREEN)✓ Skill installed. Restart Claude Code to pick up the new skill.$(NC)"
 
 .PHONY: db-migrate
 db-migrate: ## Migrate database to new schema (export, transform, reimport)
@@ -715,8 +778,30 @@ docs-schema-wiki: ## Generate schema docs + copy to wiki
 	uv run python $(TYPEDB_SCHEMAS_DIR)/generate_schema_docs.py --wiki "$(WIKI_DIR)"
 	@echo "$(GREEN)✓ Schema docs generated in local_resources/typedb/docs/ and wiki$(NC)"
 
+.PHONY: clean-dashboard
+clean-dashboard: ## Remove all generated skill dashboard wiring from dashboard/src/
+	@echo "$(BLUE)Cleaning dashboard skill wiring...$(NC)"
+	@while IFS= read -r d; do \
+	  echo "  Removing route group: $$d"; rm -rf "$$d"; \
+	done < <(find dashboard/src/app -maxdepth 1 -mindepth 1 -name '(*' 2>/dev/null)
+	@while IFS= read -r d; do \
+	  [ "$$(basename "$$d")" = "typedb-status" ] && continue; \
+	  echo "  Removing API route: $$d"; rm -rf "$$d"; \
+	done < <(find dashboard/src/app/api -maxdepth 1 -mindepth 1 2>/dev/null)
+	@while IFS= read -r d; do \
+	  [ "$$(basename "$$d")" = "ui" ] && continue; \
+	  echo "  Removing component dir: $$d"; rm -rf "$$d"; \
+	done < <(find dashboard/src/components -maxdepth 1 -mindepth 1 2>/dev/null)
+	@for f in dashboard/src/lib/*.ts; do \
+	  [ -f "$$f" ] || [ -L "$$f" ] || continue; \
+	  [ "$$(basename $$f)" = "utils.ts" ] && continue; \
+	  echo "  Removing lib file: $$f"; \
+	  rm -f "$$f"; \
+	done
+	@echo "$(GREEN)✓ Dashboard skill wiring cleaned$(NC)"
+
 .PHONY: clean
-clean: ## Clean generated files
+clean: clean-dashboard ## Clean generated files and skill dashboard wiring
 	@echo "$(BLUE)Cleaning generated files...$(NC)"
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
