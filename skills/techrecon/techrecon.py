@@ -1521,15 +1521,15 @@ def cmd_search_literature(args):
     scilit_path = os.path.normpath(scilit_path)
     if not os.path.exists(scilit_path):
         # Try relative to project root
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(skill_dir)))
+        project_root = os.path.dirname(os.path.dirname(skill_dir))
         scilit_path = os.path.join(project_root, ".claude", "skills", "scientific-literature", "scientific_literature.py")
         scilit_path = os.path.normpath(scilit_path)
         if not os.path.exists(scilit_path):
             print(json.dumps({"success": False, "error": "scientific-literature skill not found"}))
             sys.exit(1)
 
-    # Compute project root for subprocess cwd (3 levels up from skill file)
-    project_root = os.path.normpath(os.path.join(skill_dir, "..", "..", ".."))
+    # Compute project root for subprocess cwd (2 levels up from skill file)
+    project_root = os.path.normpath(os.path.join(skill_dir, "..", ".."))
 
     system_id = args.system
 
