@@ -327,6 +327,44 @@ uv run python .claude/skills/techrecon/techrecon.py show-data-model --id "datamo
 
 ---
 
+## Literature
+
+Link scientific papers to systems and review the literature for a technology.
+
+```bash
+# Search OpenAlex and link papers to a system
+uv run python .claude/skills/techrecon/techrecon.py search-literature \
+    --query "knowledge graph reasoning" \
+    --system "system-abc123" \
+    --source openalex --limit 10
+
+# Search PubMed for biomedical context
+uv run python .claude/skills/techrecon/techrecon.py search-literature \
+    --query "CRISPR gene editing" \
+    --system "system-abc123" \
+    --source pubmed --limit 5
+
+# List papers linked to a system (with citation strings)
+uv run python .claude/skills/techrecon/techrecon.py list-papers \
+    --system "system-abc123"
+
+# Link a specific paper by ID (when you already have it)
+uv run python .claude/skills/techrecon/techrecon.py link-paper \
+    --system "system-abc123" \
+    --paper-id "doi-10_1234-example"
+
+# Write a literature review note synthesizing linked papers
+uv run python .claude/skills/techrecon/techrecon.py add-note \
+    --type literature-review \
+    --about "system-abc123" \
+    --name "Literature summary" \
+    --content "## Literature Overview\n\nThe system appears primarily in..."
+```
+
+> **Requires:** The `scientific-literature` skill must be installed and TypeDB loaded with its schema. The `search-literature` command delegates to `scientific-literature` and stores papers in the shared knowledge graph.
+
+---
+
 ## Tagging
 
 ```bash
@@ -391,6 +429,7 @@ uv run python .claude/skills/techrecon/techrecon.py search-tag --tag "biomedical
 | `assessment` | `techrecon-assessment-note` | Overall system assessment |
 | `provenance` | `techrecon-provenance-note` | Origin, predecessor, motivation |
 | `use-case` | `techrecon-use-case-note` | Problem/solution/user mapping |
+| `literature-review` | `techrecon-literature-review-note` | Synthesis of literature linked to a system |
 | `general` | `note` | Unstructured note |
 
 ### Relations
@@ -428,6 +467,9 @@ uv run python .claude/skills/techrecon/techrecon.py search-tag --tag "biomedical
 | `link-concept` | Link concept | `--component`, `--concept` |
 | `link-data-model` | Link data model | `--system`, `--data-model` |
 | `link-dependency` | Link dependency | `--system`, `--dependency` |
+| `search-literature` | Search & link papers | `--query`, `--system`, `--source`, `--limit` |
+| `list-papers` | List linked papers | `--system` |
+| `link-paper` | Link single paper | `--system`, `--paper-id` |
 | `list-systems` | List systems | |
 | `show-system` | System details | `--id` |
 | `show-architecture` | Architecture map | `--id` |
