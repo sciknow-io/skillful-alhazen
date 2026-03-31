@@ -1458,6 +1458,48 @@ def cmd_list_systems(args):
     print(json.dumps({"success": True, "systems": systems, "count": len(systems)}, indent=2))
 
 
+def cmd_list_papers(args):
+    """List all scientific papers linked to a system via techrecon-references-paper."""
+    with get_driver() as driver:
+        # Verify the system exists
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            sys_check = list(tx.query(
+                f'match $s isa techrecon-system, has id "{escape_string(args.system)}"; '
+                f'fetch {{ "id": $s.id, "name": $s.name }};'
+            ).resolve())
+
+        if not sys_check:
+            print(json.dumps({"success": False, "error": f"System not found: {args.system}"}))
+            sys.exit(1)
+
+        system_id = sys_check[0].get("id")
+        system_name = sys_check[0].get("name")
+
+        # Fetch all linked papers
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            query = f'''match
+    $s isa techrecon-system, has id "{escape_string(args.system)}";
+    (system: $s, paper: $p) isa techrecon-references-paper;
+    $p has id $pid, has name $title;
+fetch {{ "id": $pid, "title": $title }};'''
+            results = list(tx.query(query).resolve())
+
+    papers = []
+    for r in results:
+        papers.append({
+            "id": r.get("id"),
+            "title": r.get("title"),
+        })
+
+    print(json.dumps({
+        "success": True,
+        "system_id": system_id,
+        "system_name": system_name,
+        "count": len(papers),
+        "papers": papers,
+    }, indent=2))
+
+
 def cmd_link_paper(args):
     """Link a techrecon-system to an existing scilit-paper via techrecon-references-paper."""
     with get_driver() as driver:
@@ -3101,6 +3143,9 @@ def main():
     g.add_argument("--system", help="System ID")
     g.add_argument("--component", help="Component ID")
 
+    p = subparsers.add_parser("list-papers", help="List scientific papers linked to a system")
+    p.add_argument("--system", required=True, help="System ID")
+
     # --- Parse and dispatch ---
 
     args = parser.parse_args()
@@ -3140,6 +3185,7 @@ def main():
         "search-literature": cmd_search_literature,
         # Queries
         "list-systems": cmd_list_systems,
+        "list-papers": cmd_list_papers,
         "show-system": cmd_show_system,
         "show-architecture": cmd_show_architecture,
         "list-artifacts": cmd_list_artifacts,
