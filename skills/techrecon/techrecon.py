@@ -1515,110 +1515,97 @@ def cmd_link_paper(args):
 
 def cmd_search_literature(args):
     """Search scientific literature and link papers to a techrecon-system."""
-    # Resolve scilit skill path
-    skill_dir = os.path.dirname(__file__)
+    skill_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # --- Path resolution ---
     scilit_path = os.path.join(skill_dir, "..", "scientific-literature", "scientific_literature.py")
-    scilit_path = os.path.normpath(scilit_path)
     if not os.path.exists(scilit_path):
-        # Try relative to project root
         project_root = os.path.dirname(os.path.dirname(skill_dir))
         scilit_path = os.path.join(project_root, ".claude", "skills", "scientific-literature", "scientific_literature.py")
-        scilit_path = os.path.normpath(scilit_path)
-        if not os.path.exists(scilit_path):
-            print(json.dumps({"success": False, "error": "scientific-literature skill not found"}))
-            sys.exit(1)
+    if not os.path.exists(scilit_path):
+        print(json.dumps({"success": False, "error": "scientific-literature skill not found"}))
+        sys.exit(1)
 
-    # Compute project root for subprocess cwd (2 levels up from skill file)
     project_root = os.path.normpath(os.path.join(skill_dir, "..", ".."))
 
-    system_id = args.system
-
-    # Verify system exists
+    # --- Verify system exists (own driver context) ---
     with get_driver() as driver:
         with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
             sys_check = list(tx.query(
-                f'match $s isa techrecon-system, has id "{escape_string(system_id)}"; '
+                f'match $s isa techrecon-system, has id "{escape_string(args.system)}"; '
                 f'fetch {{ "id": $s.id, "name": $s.name }};'
             ).resolve())
+    if not sys_check:
+        print(json.dumps({"success": False, "error": f"System not found: {args.system}"}))
+        sys.exit(1)
 
-        if not sys_check:
-            print(json.dumps({"success": False, "error": f"System not found: {system_id}"}))
-            sys.exit(1)
+    # --- Run scilit search (outside driver context) ---
+    cmd = ["uv", "run", "python", scilit_path, "search",
+           "--source", args.source, "--query", args.query,
+           "--max-results", str(args.limit)]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=project_root)
 
-        # Run scilit search via subprocess
-        cmd = ["uv", "run", "python", scilit_path, "search",
-               "--source", args.source,
-               "--query", args.query]
-        if args.limit:
-            cmd += ["--max-results", str(args.limit)]
+    if result.returncode != 0:
+        print(json.dumps({"success": False, "error": f"scilit search failed: {result.stderr[:500]}"}))
+        sys.exit(1)
 
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=project_root)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"success": False, "error": f"Failed to parse scilit output: {e}"}))
+        sys.exit(1)
 
-        if result.returncode != 0:
-            print(json.dumps({
-                "success": False,
-                "error": "scilit search failed",
-                "stderr": result.stderr,
-            }))
-            sys.exit(1)
+    # --- Check scilit success flag ---
+    if not data.get("success"):
+        print(json.dumps({"success": False, "error": f"scilit search returned failure: {data.get('error', 'unknown')}"}))
+        sys.exit(1)
 
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError as e:
-            print(json.dumps({
-                "success": False,
-                "error": f"Failed to parse scilit output: {e}",
-                "stderr": result.stderr,
-            }))
-            sys.exit(1)
+    papers = data.get("papers", [])
 
-        papers = data.get("papers", [])
-        papers_linked = 0
-        papers_already_linked = 0
-        output_papers = []
+    # --- Link papers to system ---
+    papers_linked = 0
+    papers_already_linked = 0
+    result_papers = []
 
+    with get_driver() as driver:
         for paper in papers:
             paper_id = paper.get("id")
-            paper_title = paper.get("title", "")
             if not paper_id:
                 continue
-
             # Check if link already exists
             with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
                 existing = list(tx.query(
-                    f'match $s isa techrecon-system, has id "{escape_string(system_id)}"; '
+                    f'match $s isa techrecon-system, has id "{escape_string(args.system)}"; '
                     f'$p isa scilit-paper, has id "{escape_string(paper_id)}"; '
                     f'(system: $s, paper: $p) isa techrecon-references-paper; '
                     f'fetch {{ "system": $s.id }};'
                 ).resolve())
-
             if existing:
                 papers_already_linked += 1
-                output_papers.append({"id": paper_id, "title": paper_title, "linked": False})
+                result_papers.append({"id": paper_id, "title": paper.get("title", ""), "linked": False})
             else:
                 with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
                     tx.query(
-                        f'match $s isa techrecon-system, has id "{escape_string(system_id)}"; '
+                        f'match $s isa techrecon-system, has id "{escape_string(args.system)}"; '
                         f'$p isa scilit-paper, has id "{escape_string(paper_id)}"; '
                         f'insert (system: $s, paper: $p) isa techrecon-references-paper;'
                     ).resolve()
                     tx.commit()
                 papers_linked += 1
-                output_papers.append({"id": paper_id, "title": paper_title, "linked": True})
+                result_papers.append({"id": paper_id, "title": paper.get("title", ""), "linked": True})
 
-        # Optionally add system to investigation
         if args.investigation:
-            add_to_collection(driver, system_id, args.investigation)
+            add_to_collection(driver, args.system, args.investigation)
 
     print(json.dumps({
         "success": True,
-        "system_id": system_id,
+        "system_id": args.system,
         "query": args.query,
         "source": args.source,
         "papers_found": len(papers),
         "papers_linked": papers_linked,
         "papers_already_linked": papers_already_linked,
-        "papers": output_papers,
+        "papers": result_papers,
     }, indent=2))
 
 
@@ -2973,7 +2960,7 @@ def main():
     p.add_argument("--query", required=True, help="Search query")
     p.add_argument("--system", required=True, help="System ID to link papers to")
     p.add_argument("--source", default="openalex",
-                   choices=["epmc", "pubmed", "openalex", "biorxiv"],
+                   choices=["pubmed", "openalex", "biorxiv"],
                    help="Literature source (default: openalex)")
     p.add_argument("--limit", type=int, default=10, help="Maximum results (default: 10)")
     p.add_argument("--investigation", help="Investigation ID")
