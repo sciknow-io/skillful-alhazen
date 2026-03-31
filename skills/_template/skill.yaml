@@ -1,0 +1,40 @@
+name: DOMAIN
+description: "Brief description of what this skill does"
+license: Apache-2.0
+compatibility: "TypeDB 3.x"
+
+# Core files
+script: template.py
+schema: schema.tql
+
+# Dependencies
+requires:
+  bins: [uv, docker]
+  env: [TYPEDB_HOST, TYPEDB_PORT, TYPEDB_DATABASE]
+  optional_env: []
+
+# CLI operations
+operations:
+  ingestion:
+    - ingest
+    - add-entity
+  artifacts:
+    - list-artifacts
+    - show-artifact
+  queries:
+    - list-entities
+    - show-entity
+  updates:
+    - add-note
+    - tag
+    - search-tag
+
+# TypeDB entity types defined in schema.tql
+entity_types:
+  - DOMAIN-entity     # replace with actual entity type name
+
+# Bundle metadata — used by make package-skill and make install-skill
+bundle:
+  schema_check_type: DOMAIN-entity   # first entity type in schema.tql
+  zip_name: DOMAIN-v1.0.zip
+  version: "1.0"

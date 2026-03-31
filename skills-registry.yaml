@@ -75,7 +75,7 @@ skills:
       color: indigo
 
   - name: techrecon
-    subdir: skills/demo/techrecon
+    path: skills/techrecon
     dashboard:
       enabled: true
       name: "Tech Recon Dashboard"

@@ -46,6 +46,10 @@ Commands:
     Export:
         export-design       Export annotated Markdown design changelog
 
+    Skill data (zip bundles):
+        export-skill-data   Export KG snapshot for a skill (used by make package-skill)
+        import-skill-data   Import KG snapshot from export-skill-data JSON
+
 Environment:
     TYPEDB_HOST       TypeDB server host (default: localhost)
     TYPEDB_PORT       TypeDB server port (default: 1729)
@@ -2196,6 +2200,241 @@ def cmd_generate_template(args):
 # =============================================================================
 
 
+def cmd_export_skill_data(args):
+    """
+    Export all skill-builder KG data for a skill as a structured JSON snapshot.
+
+    Queries domains whose dm-skill-name matches --skill, plus their phase items
+    (entity schemas, source schemas, derivation skills, analysis skills) and all
+    design gaps linked to those phase items.
+    """
+    if not TYPEDB_AVAILABLE:
+        out({"success": False, "error": "typedb-driver not installed"})
+        return
+
+    skill_name = args.skill
+    ts = get_timestamp()
+
+    with get_driver() as driver:
+        # Find domains with matching skill name
+        domain_q = f"""
+            match $d isa dm-domain, has dm-skill-name "{escape_string(skill_name)}";
+            fetch {{ "id": $d.id, "name": $d.name, "description": $d.description,
+                    "skill": $d.dm-skill-name, "created": $d.created-at }};
+        """
+        domains_raw = fetch_query(driver, domain_q)
+
+        if not domains_raw:
+            out({"success": True, "skill": skill_name, "exported_at": ts, "domains": [],
+                 "message": f"No domains found with dm-skill-name='{skill_name}'"})
+            return
+
+        domains_out = []
+        phase_types = [
+            ("dm-entity-schema", "entity_schema"),
+            ("dm-source-schema", "source_schema"),
+            ("dm-derivation-skill", "derivation_skill"),
+            ("dm-analysis-skill", "analysis_skill"),
+        ]
+
+        for domain in domains_raw:
+            domain_id = domain.get("id", "")
+            eid = escape_string(domain_id)
+            phase_items_out = []
+
+            for ptype, phase_type_key in phase_types:
+                items_q = f"""
+                    match $p isa {ptype};
+                          $d isa dm-domain, has id "{eid}";
+                          (subject: $p, domain: $d) isa dm-in-domain;
+                    fetch {{ "id": $p.id, "name": $p.name, "description": $p.description,
+                            "feasibility": $p.dm-feasibility, "phase": $p.dm-phase-number,
+                            "created": $p.created-at }};
+                """
+                items_raw = fetch_query(driver, items_q)
+
+                for item in items_raw:
+                    item_id = item.get("id", "")
+                    pid = escape_string(item_id)
+
+                    gap_q = f"""
+                        match $p isa {ptype}, has id "{pid}";
+                              $g isa dm-design-gap;
+                              (phase-subject: $p, phase-gap: $g) isa dm-phase-artifact;
+                        fetch {{ "id": $g.id, "name": $g.name, "description": $g.description,
+                                "severity": $g.dm-error-severity, "status": $g.dm-error-status,
+                                "created": $g.created-at }};
+                    """
+                    gaps = fetch_query(driver, gap_q)
+
+                    phase_items_out.append({
+                        "id": item_id,
+                        "name": item.get("name"),
+                        "description": item.get("description"),
+                        "feasibility": item.get("feasibility"),
+                        "phase_number": item.get("phase"),
+                        "phase_type": phase_type_key,
+                        "typedb_type": ptype,
+                        "gaps": [
+                            {
+                                "id": g.get("id"),
+                                "name": g.get("name"),
+                                "description": g.get("description"),
+                                "severity": g.get("severity"),
+                                "status": g.get("status"),
+                            }
+                            for g in gaps
+                        ],
+                    })
+
+            domains_out.append({
+                "id": domain_id,
+                "name": domain.get("name"),
+                "description": domain.get("description"),
+                "skill": domain.get("skill"),
+                "phase_items": phase_items_out,
+            })
+
+    out({
+        "success": True,
+        "skill": skill_name,
+        "exported_at": ts,
+        "domains": domains_out,
+    })
+
+
+def cmd_import_skill_data(args):
+    """
+    Import skill-builder KG data from a JSON file produced by export-skill-data.
+
+    Inserts domains, phase items, and design gaps that do not already exist
+    (checked by id). Existing entities are skipped (idempotent).
+    """
+    if not TYPEDB_AVAILABLE:
+        out({"success": False, "error": "typedb-driver not installed"})
+        return
+
+    import json as _json
+
+    file_path = args.file
+    try:
+        with open(file_path) as f:
+            data = _json.load(f)
+    except Exception as e:
+        out({"success": False, "error": f"Could not read file: {e}"})
+        return
+
+    domains = data.get("domains", [])
+    ts = get_timestamp()
+    inserted = {"domains": 0, "phase_items": 0, "gaps": 0}
+    skipped = {"domains": 0, "phase_items": 0, "gaps": 0}
+
+    with get_driver() as driver:
+        for domain in domains:
+            domain_id = domain.get("id")
+            if not domain_id:
+                continue
+
+            # Check if domain exists
+            check_q = f'match $d isa dm-domain, has id "{escape_string(domain_id)}"; fetch {{ "id": $d.id }};'
+            existing = fetch_query(driver, check_q)
+
+            if existing:
+                skipped["domains"] += 1
+            else:
+                # Insert domain
+                clauses = [s("id", domain_id), dt("created-at", ts)]
+                if domain.get("name"):
+                    clauses.append(s("name", domain["name"]))
+                if domain.get("description"):
+                    clauses.append(s("description", domain["description"]))
+                if domain.get("skill"):
+                    clauses.append(s("dm-skill-name", domain["skill"]))
+                with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+                    insert_entity(tx, "dm-domain", clauses)
+                    tx.commit()
+                inserted["domains"] += 1
+
+            # Process phase items
+            for item in domain.get("phase_items", []):
+                item_id = item.get("id")
+                ptype = item.get("typedb_type")
+                if not item_id or not ptype:
+                    continue
+
+                check_q = f'match $p isa {ptype}, has id "{escape_string(item_id)}"; fetch {{ "id": $p.id }};'
+                existing = fetch_query(driver, check_q)
+
+                if existing:
+                    skipped["phase_items"] += 1
+                else:
+                    clauses = [s("id", item_id), dt("created-at", ts)]
+                    if item.get("name"):
+                        clauses.append(s("name", item["name"]))
+                    if item.get("description"):
+                        clauses.append(s("description", item["description"]))
+                    if item.get("feasibility"):
+                        clauses.append(s("dm-feasibility", item["feasibility"]))
+                    if item.get("phase_number") is not None:
+                        clauses.append(num("dm-phase-number", item["phase_number"]))
+                    with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+                        insert_entity(tx, ptype, clauses)
+                        # Link to domain
+                        insert_relation(tx, "dm-in-domain", {
+                            "subject": (ptype, item_id),
+                            "domain": ("dm-domain", domain_id),
+                        })
+                        tx.commit()
+                    inserted["phase_items"] += 1
+
+                # Process gaps for this phase item
+                for gap in item.get("gaps", []):
+                    gap_id = gap.get("id")
+                    if not gap_id:
+                        continue
+
+                    check_q = f'match $g isa dm-design-gap, has id "{escape_string(gap_id)}"; fetch {{ "id": $g.id }};'
+                    existing = fetch_query(driver, check_q)
+
+                    if existing:
+                        skipped["gaps"] += 1
+                    else:
+                        desc = gap.get("description") or gap.get("name") or ""
+                        clauses = [
+                            s("id", gap_id),
+                            s("name", desc[:80]),
+                            s("description", desc),
+                            dt("created-at", ts),
+                            s("dm-error-severity", gap.get("severity") or "moderate"),
+                            s("dm-error-status", gap.get("status") or "open"),
+                        ]
+                        if item.get("phase_number") is not None:
+                            clauses.append(num("dm-phase-number", item["phase_number"]))
+                        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+                            insert_entity(tx, "dm-design-gap", clauses)
+                            # Link gap to phase item
+                            link_q = (
+                                f'match $ps isa {ptype}, has id "{escape_string(item_id)}"; '
+                                f'$gp isa dm-design-gap, has id "{escape_string(gap_id)}"; '
+                                f'insert (phase-subject: $ps, phase-gap: $gp) isa dm-phase-artifact;'
+                            )
+                            tx.query(link_q).resolve()
+                            # Link gap to domain
+                            insert_relation(tx, "dm-in-domain", {
+                                "subject": ("dm-design-gap", gap_id),
+                                "domain": ("dm-domain", domain_id),
+                            })
+                            tx.commit()
+                        inserted["gaps"] += 1
+
+    out({
+        "success": True,
+        "file": file_path,
+        "inserted": inserted,
+        "skipped": skipped,
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Domain Modeling Skill - Track knowledge domain design processes",
@@ -2451,6 +2690,15 @@ def main():
     p = subparsers.add_parser("generate-template",
                               help="Print blank domain spec template to stdout (fill out and ingest with ingest-source-doc)")
 
+    # --- Skill data export/import ---
+    p = subparsers.add_parser("export-skill-data",
+                              help="Export skill-builder KG snapshot for a skill (for zip bundles)")
+    p.add_argument("--skill", required=True, help="Skill name to export (matches dm-skill-name)")
+
+    p = subparsers.add_parser("import-skill-data",
+                              help="Import skill-builder KG snapshot from export-skill-data JSON")
+    p.add_argument("--file", required=True, help="Path to JSON file from export-skill-data")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -2498,6 +2746,8 @@ def main():
         "list-source-docs": cmd_list_source_docs,
         "show-source-doc": cmd_show_source_doc,
         "generate-template": cmd_generate_template,
+        "export-skill-data": cmd_export_skill_data,
+        "import-skill-data": cmd_import_skill_data,
     }
 
     try:

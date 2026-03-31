@@ -252,10 +252,6 @@ with driver.transaction(database, TransactionType.READ) as tx:
 
 ### TypeDB Schema
 - `local_resources/typedb/alhazen_notebook.tql` - Core notebook schema
-- `local_skills/scientific-literature/schema.tql` - Scientific literature extensions (owned by skill)
-- `local_resources/typedb/namespaces/jobhunt.tql` - Job hunting extensions
-- `local_resources/typedb/namespaces/apm.tql` - Precision medicine extensions
-- `local_resources/typedb/namespaces/techrecon.tql` - Tech recon extensions
 - `local_resources/typedb/docs/` - Generated schema documentation
 
 ### Alhazen's Notebook Model
@@ -288,6 +284,7 @@ Large artifacts (PDFs, HTML, images) are stored in a file cache organized by con
 - `~/.alhazen/cache/image/` - Images (screenshots, diagrams)
 - `~/.alhazen/cache/json/` - Structured data (API responses)
 - `~/.alhazen/cache/text/` - Plain text files
+- `~/.alhazen/cache/github/` - Github repos (indexed by <organization>/<repo>)
 
 **Storage Strategy:**
 - Content < 50KB: Stored inline in TypeDB `content` attribute
@@ -355,7 +352,7 @@ local_skills/<name>/    (gitignored build artifact — DO NOT EDIT HERE)
 
 Interactive Next.js TypeScript dashboard:
 
-- `dashboard/` - Job hunt dashboard built with Next.js 16, shadcn/ui, and Tailwind CSS
+- `dashboard/` - Dashboards built with Next.js 16, shadcn/ui, and Tailwind CSS
   - Pipeline Kanban board for tracking applications
   - Skills matrix showing gaps across positions
   - Learning plan with progress tracking
@@ -613,6 +610,13 @@ uv run python .claude/skills/skill-builder/skill_builder.py add-phase-gap \
 - **jobhunt + techrecon schemas were 2.x** — Both were migrated to TypeDB 3.x in Mar 2026
   (commit `6b41acf` in alhazen-skill-examples). If a schema fails on `make build-db` with a
   syntax error near `sub attribute`, the upstream source likely still has 2.x syntax.
+
+### Dashboard Design Conventions
+
+- **Overview-first layout**: Main entity pages (investigations, systems) show a high-level orientation summary at the top. All detail sections are click-through — do not render full content inline.
+- **Notes**: Always render as a collapsible list (type badge + extracted heading visible; full markdown expands on click). Never dump all note markdown on the page at once.
+- **Workflows**: Always surface workflow links on any entity page that has associated workflows.
+- **Hyperlink style**: All navigation links must be visually distinct from body text. Use `text-cyan-400 font-semibold underline underline-offset-2 hover:text-blue-400 transition-colors` consistently for all `<Link>` and `<a>` elements in techrecon dashboard pages.
 
 ### Dashboard & Docker Rebuild
 

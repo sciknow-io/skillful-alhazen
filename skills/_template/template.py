@@ -64,7 +64,9 @@ except ImportError:
     )
 
 try:
-    from skillful_alhazen.utils.skill_helpers import escape_string, generate_id, get_timestamp
+    from skillful_alhazen.utils.skill_helpers import (
+        escape_string, generate_id, get_timestamp, check_infrastructure,
+    )
 except ImportError:
     import uuid
     from datetime import datetime, timezone
@@ -79,6 +81,8 @@ except ImportError:
 
     def get_timestamp() -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+    def check_infrastructure(*args, **kwargs): pass  # no-op if pkg unavailable
 
 # Cache utilities for large artifacts
 try:
@@ -623,6 +627,14 @@ def cmd_search_tag(args):
 
 
 def main():
+    # Infrastructure check — fast-fails with helpful message if TypeDB/dashboard missing
+    check_infrastructure(
+        skill_name="DOMAIN",                      # replace with actual skill name
+        schema_check_type="DOMAIN-main-entity",   # replace: first entity in schema.tql
+        has_dashboard=False,                      # set True if skill has dashboard/
+        zip_name="domain-v1.0.zip",               # replace: from skill.yaml bundle.zip_name
+    )
+
     parser = argparse.ArgumentParser(
         description="[DOMAIN] CLI - [Brief description]"
     )

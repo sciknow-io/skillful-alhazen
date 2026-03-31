@@ -53,7 +53,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'db-' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo
 	@echo "$(GREEN)Deployment:$(NC)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'deploy-(vps|macmini|status)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'deploy-(vps|macmini|status)|openclaw-(stop|start)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo
 	@echo "$(GREEN)Remote Access:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'tailscale' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
@@ -929,6 +929,36 @@ deploy-status: ## Check deployment status on remote
 		exit 1; \
 	fi
 	@ssh $(TARGET) "docker ps -a 2>/dev/null || podman ps -a 2>/dev/null" || echo "$(RED)Could not connect to $(TARGET)$(NC)"
+
+OPENCLAW_PLISTS := \
+	/Library/LaunchDaemons/com.alhazen.openclaw.plist \
+	/Library/LaunchDaemons/ai.openclaw.gateway.plist \
+	/Library/LaunchDaemons/com.alhazen.litellm.plist \
+	/Library/LaunchDaemons/com.alhazen.mcp.plist \
+	/Library/LaunchDaemons/com.openclaw.monitor.plist \
+	/Library/LaunchDaemons/com.openclaw.pf.plist
+
+.PHONY: openclaw-stop
+openclaw-stop: ## Stop all OpenClaw launchd services (requires sudo)
+	@echo "$(BLUE)Stopping OpenClaw services...$(NC)"
+	@for plist in $(OPENCLAW_PLISTS); do \
+		if [ -f "$$plist" ]; then \
+			echo "  Unloading $$plist"; \
+			sudo launchctl unload "$$plist" 2>/dev/null || true; \
+		fi; \
+	done
+	@echo "$(GREEN)✓ OpenClaw services stopped$(NC)"
+
+.PHONY: openclaw-start
+openclaw-start: ## Start all OpenClaw launchd services (requires sudo)
+	@echo "$(BLUE)Starting OpenClaw services...$(NC)"
+	@for plist in $(OPENCLAW_PLISTS); do \
+		if [ -f "$$plist" ]; then \
+			echo "  Loading $$plist"; \
+			sudo launchctl load "$$plist"; \
+		fi; \
+	done
+	@echo "$(GREEN)✓ OpenClaw services started$(NC)"
 
 # Default target
 .DEFAULT_GOAL := help
