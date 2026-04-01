@@ -71,8 +71,8 @@ entity tech-recon-investigation sub collection,
     owns tech-recon-status,
     plays investigated-in:investigation,
     plays sourced-from:source,
-    plays analysis-of:investigation,
-    plays aboutness:subject;
+    plays analysis-of:investigation;
+    # inherits plays aboutness:subject from identifiable-entity
 
 
 # -----------------------------------------------------------------------------
@@ -83,12 +83,11 @@ entity tech-recon-system sub domain-thing,
     owns tech-recon-url,
     owns github-url,
     owns tech-recon-language,
-    owns license,
     owns star-count,
     owns tech-recon-status,
     plays investigated-in:system,
-    plays sourced-from:source,
-    plays aboutness:subject;
+    plays sourced-from:source;
+    # inherits plays aboutness:subject from identifiable-entity
 
 
 # -----------------------------------------------------------------------------
@@ -114,8 +113,8 @@ entity tech-recon-analysis sub artifact,
 
 entity tech-recon-note sub note,
     owns topic,
-    owns tech-recon-tag,
-    plays aboutness:note;
+    owns tech-recon-tag;
+    # inherits plays aboutness:note from note base type
 
 
 # =============================================================================
