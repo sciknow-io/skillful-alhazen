@@ -18,8 +18,10 @@ define
 
 # -----------------------------------------------------------------------------
 # ATTRIBUTE TYPES - Tech-Recon Specific
-# (status, url, title, description, tag, language, license, format, content,
-#  cache-path are already defined in the core schema — not redefined here)
+# (license, format, content, cache-path, description, name, created-at are
+#  already defined in the core schema — not redefined here)
+# All tech-recon-specific attributes use the tech-recon- prefix to avoid
+# collisions with other namespaces.
 # -----------------------------------------------------------------------------
 
 attribute goal-description, value string;
@@ -31,6 +33,11 @@ attribute tql-query, value string;
 attribute analysis-type, value string;
 attribute github-url, value string;
 attribute star-count, value integer;
+attribute tech-recon-url, value string;
+attribute tech-recon-status, value string;
+attribute tech-recon-language, value string;
+attribute tech-recon-title, value string;
+attribute tech-recon-tag, value string;
 
 
 # -----------------------------------------------------------------------------
@@ -61,6 +68,7 @@ relation analysis-of,
 entity tech-recon-investigation sub collection,
     owns goal-description,
     owns success-criteria,
+    owns tech-recon-status,
     plays investigated-in:investigation,
     plays sourced-from:source,
     plays analysis-of:investigation,
@@ -72,12 +80,12 @@ entity tech-recon-investigation sub collection,
 # -----------------------------------------------------------------------------
 
 entity tech-recon-system sub domain-thing,
-    owns url,
+    owns tech-recon-url,
     owns github-url,
-    owns language,
+    owns tech-recon-language,
     owns license,
     owns star-count,
-    owns status,
+    owns tech-recon-status,
     plays investigated-in:system,
     plays sourced-from:source,
     plays aboutness:subject;
@@ -89,11 +97,11 @@ entity tech-recon-system sub domain-thing,
 
 entity tech-recon-artifact sub artifact,
     owns artifact-type,
-    owns url,
+    owns tech-recon-url,
     plays sourced-from:artifact;
 
 entity tech-recon-analysis sub artifact,
-    owns title,
+    owns tech-recon-title,
     owns analysis-type,
     owns plot-code,
     owns tql-query,
@@ -106,7 +114,7 @@ entity tech-recon-analysis sub artifact,
 
 entity tech-recon-note sub note,
     owns topic,
-    owns tag,
+    owns tech-recon-tag,
     plays aboutness:note;
 
 

@@ -216,7 +216,7 @@ def cmd_start_investigation(args):
                     has name "{name}",
                     has goal-description "{goal}",
                     has success-criteria "{criteria}",
-                    has status "scoping",
+                    has tech-recon-status "scoping",
                     has created-at {ts};
             '''
             tx.query(q).resolve()
@@ -230,7 +230,7 @@ def cmd_start_investigation(args):
                     insert $sys isa tech-recon-system,
                         has id "{sys_id}",
                         has name "{esc_name}",
-                        has status "confirmed",
+                        has tech-recon-status "confirmed",
                         has created-at {ts};
                 '''
                 tx.query(sq).resolve()
@@ -274,7 +274,7 @@ def cmd_list_investigations(args):
                 fetch {
                     "id": $inv.id,
                     "name": $inv.name,
-                    "status": $inv.status,
+                    "status": $inv.tech-recon-status,
                     "goal": $inv.goal-description
                 };
             ''').resolve())
@@ -308,7 +308,7 @@ def cmd_show_investigation(args):
                 fetch {{
                     "id": $inv.id,
                     "name": $inv.name,
-                    "status": $inv.status,
+                    "status": $inv.tech-recon-status,
                     "goal": $inv.goal-description,
                     "criteria": $inv.success-criteria
                 }};
@@ -384,9 +384,9 @@ def cmd_update_investigation(args):
                 tx.query(f'''
                     match
                         $inv isa tech-recon-investigation, has id "{inv_id}",
-                            has status $old_status;
+                            has tech-recon-status $old_status;
                     delete has $old_status of $inv;
-                    insert $inv has status "{new_status}";
+                    insert $inv has tech-recon-status "{new_status}";
                 ''').resolve()
 
             if args.goal:
@@ -462,7 +462,7 @@ def cmd_add_system(args):
             if args.github_url:
                 optional_attrs += f', has github-url "{escape_string(args.github_url)}"'
             if args.language:
-                optional_attrs += f', has language "{escape_string(args.language)}"'
+                optional_attrs += f', has tech-recon-language "{escape_string(args.language)}"'
             if args.license:
                 optional_attrs += f', has license "{escape_string(args.license)}"'
             if args.star_count is not None:
@@ -472,8 +472,8 @@ def cmd_add_system(args):
                 insert $sys isa tech-recon-system,
                     has id "{sys_id}",
                     has name "{name}",
-                    has url "{url}",
-                    has status "{status}",
+                    has tech-recon-url "{url}",
+                    has tech-recon-status "{status}",
                     has created-at {ts}{optional_attrs};
             '''
             tx.query(sq).resolve()
@@ -522,9 +522,9 @@ def cmd_approve_system(args):
             tx.query(f'''
                 match
                     $sys isa tech-recon-system, has id "{sys_id}",
-                        has status $old_status;
+                        has tech-recon-status $old_status;
                 delete has $old_status of $sys;
-                insert $sys has status "confirmed";
+                insert $sys has tech-recon-status "confirmed";
             ''').resolve()
             tx.commit()
 
@@ -556,9 +556,9 @@ def cmd_list_systems(args):
                     fetch {{
                         "id": $sys.id,
                         "name": $sys.name,
-                        "url": $sys.url,
-                        "status": $sys.status,
-                        "language": $sys.language,
+                        "url": $sys.tech-recon-url,
+                        "status": $sys.tech-recon-status,
+                        "language": $sys.tech-recon-language,
                         "license": $sys.license,
                         "star_count": $sys.star-count
                     }};
@@ -568,14 +568,14 @@ def cmd_list_systems(args):
                 results = list(tx.query(f'''
                     match
                         $inv isa tech-recon-investigation, has id "{inv_id}";
-                        $sys isa tech-recon-system, has status "{esc_status}";
+                        $sys isa tech-recon-system, has tech-recon-status "{esc_status}";
                         (system: $sys, investigation: $inv) isa investigated-in;
                     fetch {{
                         "id": $sys.id,
                         "name": $sys.name,
-                        "url": $sys.url,
-                        "status": $sys.status,
-                        "language": $sys.language,
+                        "url": $sys.tech-recon-url,
+                        "status": $sys.tech-recon-status,
+                        "language": $sys.tech-recon-language,
                         "license": $sys.license,
                         "star_count": $sys.star-count
                     }};
@@ -613,10 +613,10 @@ def cmd_show_system(args):
                 fetch {{
                     "id": $sys.id,
                     "name": $sys.name,
-                    "url": $sys.url,
-                    "status": $sys.status,
+                    "url": $sys.tech-recon-url,
+                    "status": $sys.tech-recon-status,
                     "github_url": $sys.github-url,
-                    "language": $sys.language,
+                    "language": $sys.tech-recon-language,
                     "license": $sys.license,
                     "star_count": $sys.star-count
                 }};
@@ -761,7 +761,7 @@ def _insert_artifact_and_link(tx, art_id, ts, artifact_type, url, fmt, cache_pat
         insert $art isa tech-recon-artifact,
             has id "{art_id}",
             has artifact-type "{esc_type}",
-            has url "{esc_url}",
+            has tech-recon-url "{esc_url}",
             has format "{esc_fmt}",
             has created-at {ts}{optional};
     '''
@@ -780,16 +780,16 @@ def _insert_artifact_and_link(tx, art_id, ts, artifact_type, url, fmt, cache_pat
 def _update_system_status_if_confirmed(tx, sys_id):
     """Update system status from 'confirmed' -> 'ingested'."""
     check = list(tx.query(f'''
-        match $sys isa tech-recon-system, has id "{escape_string(sys_id)}", has status "confirmed";
+        match $sys isa tech-recon-system, has id "{escape_string(sys_id)}", has tech-recon-status "confirmed";
         fetch {{ "id": $sys.id }};
     ''').resolve())
     if check:
         tx.query(f'''
             match
                 $sys isa tech-recon-system, has id "{escape_string(sys_id)}",
-                    has status $old_status;
+                    has tech-recon-status $old_status;
             delete has $old_status of $sys;
-            insert $sys has status "ingested";
+            insert $sys has tech-recon-status "ingested";
         ''').resolve()
 
 
@@ -1139,7 +1139,7 @@ def cmd_list_artifacts(args):
                     fetch {{
                         "id": $art.id,
                         "type": $art.artifact-type,
-                        "url": $art.url,
+                        "url": $art.tech-recon-url,
                         "format": $art.format,
                         "cache_path": $art.cache-path
                     }};
@@ -1153,7 +1153,7 @@ def cmd_list_artifacts(args):
                     fetch {{
                         "id": $art.id,
                         "type": $art.artifact-type,
-                        "url": $art.url,
+                        "url": $art.tech-recon-url,
                         "format": $art.format,
                         "cache_path": $art.cache-path
                     }};
@@ -1188,7 +1188,7 @@ def cmd_show_artifact(args):
                 fetch {{
                     "id": $art.id,
                     "type": $art.artifact-type,
-                    "url": $art.url,
+                    "url": $art.tech-recon-url,
                     "format": $art.format,
                     "cache_path": $art.cache-path,
                     "content": $art.content
