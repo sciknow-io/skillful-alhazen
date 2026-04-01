@@ -1646,7 +1646,10 @@ def cmd_run_analysis(args):
         plot_code = results[0].get("plot_code")
         tql_query = results[0].get("query")
 
-        # Step 2: Execute the stored TypeQL query
+        # Step 2: Execute the stored TypeQL query (must be a fetch query)
+        if "fetch" not in tql_query.lower():
+            print(json.dumps({"success": False, "error": "Stored query must be a fetch query. Non-fetch queries return TypeDB concept objects that are not JSON-serializable."}))
+            sys.exit(1)
         with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
             data_results = list(tx.query(tql_query).resolve())
 
