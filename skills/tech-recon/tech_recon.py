@@ -25,6 +25,14 @@ Commands:
     list-artifacts        List artifacts linked to a system
     show-artifact         Show full artifact details with content preview
     cache-stats           Show cache directory size by content type
+    write-note            Write a note and attach it to a system or investigation
+    list-notes            List notes attached to a subject entity
+    show-note             Show full note details including all tags
+    add-analysis          Add an Observable Plot analysis to an investigation
+    list-analyses         List analyses linked to an investigation
+    show-analysis         Show full analysis details including plot code and query
+    run-analysis          Execute a stored analysis: run its TypeQL query + return data
+    plan-analyses         Return investigation context for visualization planning
 
 Environment:
     TYPEDB_HOST       TypeDB server host (default: localhost)
@@ -1257,6 +1265,517 @@ def cmd_cache_stats(args):
 
 
 # =============================================================================
+# SENSEMAKING COMMANDS (NOTES)
+# =============================================================================
+
+
+def cmd_write_note(args):
+    """Write a note and attach it to a subject entity (system or investigation)."""
+    subject_id = escape_string(args.subject_id)
+    topic = escape_string(args.topic)
+    fmt = escape_string(args.format)
+    content = escape_string(args.content)
+    note_id = generate_id("trn")
+    ts = get_timestamp()
+
+    driver = get_driver()
+    try:
+        # Verify subject exists
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            check = list(tx.query(f'''
+                match $e isa identifiable-entity, has id "{subject_id}";
+                fetch {{ "id": $e.id }};
+            ''').resolve())
+        if not check:
+            print(json.dumps({"success": False, "error": f"Subject {args.subject_id} not found"}))
+            sys.exit(1)
+
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            # Insert note
+            insert_q = f'''
+                insert $n isa tech-recon-note,
+                    has id "{note_id}",
+                    has name "{topic}",
+                    has topic "{topic}",
+                    has format "{fmt}",
+                    has content "{content}",
+                    has created-at {ts};
+            '''
+            tx.query(insert_q).resolve()
+
+            # Add tags if provided
+            if args.tags:
+                for raw_tag in args.tags.split(","):
+                    tag = escape_string(raw_tag.strip())
+                    if tag:
+                        tx.query(f'''
+                            match $n isa tech-recon-note, has id "{note_id}";
+                            insert $n has tech-recon-tag "{tag}";
+                        ''').resolve()
+
+            # Link note to subject via aboutness
+            link_q = f'''
+                match
+                    $e isa identifiable-entity, has id "{subject_id}";
+                    $n isa tech-recon-note, has id "{note_id}";
+                insert
+                    (note: $n, subject: $e) isa aboutness;
+            '''
+            tx.query(link_q).resolve()
+            tx.commit()
+
+        print(json.dumps({
+            "success": True,
+            "note": {
+                "id": note_id,
+                "topic": args.topic,
+                "format": args.format,
+                "subject_id": args.subject_id,
+            },
+        }))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+def cmd_list_notes(args):
+    """List all notes attached to a subject entity."""
+    subject_id = escape_string(args.subject_id)
+    driver = get_driver()
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            # Build optional filters
+            topic_filter = ""
+            if args.topic:
+                topic_filter = f', has topic "{escape_string(args.topic)}"'
+            fmt_filter = ""
+            if args.format:
+                fmt_filter = f', has format "{escape_string(args.format)}"'
+
+            results = list(tx.query(f'''
+                match
+                    $e isa identifiable-entity, has id "{subject_id}";
+                    $n isa tech-recon-note{topic_filter}{fmt_filter};
+                    (note: $n, subject: $e) isa aboutness;
+                    $n has topic $topic;
+                    $n has format $fmt;
+                    $n has content $content;
+                    $n has id $nid;
+                fetch {{
+                    "id": $nid,
+                    "topic": $topic,
+                    "format": $fmt,
+                    "content": $content
+                }};
+            ''').resolve())
+
+            # Fetch tags per note
+            notes = []
+            for r in results:
+                note_id_val = r.get("id")
+                content_val = r.get("content") or ""
+                tag_results = list(tx.query(f'''
+                    match $n isa tech-recon-note, has id "{escape_string(note_id_val)}", has tech-recon-tag $tag;
+                    fetch {{ "tag": $tag }};
+                ''').resolve())
+                tags = [t.get("tag") for t in tag_results if t.get("tag")]
+                notes.append({
+                    "id": note_id_val,
+                    "topic": r.get("topic"),
+                    "format": r.get("format"),
+                    "tags": tags,
+                    "content_preview": content_val[:200],
+                })
+
+        print(json.dumps({"success": True, "notes": notes}))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+def cmd_show_note(args):
+    """Show full details of a note including all tags."""
+    note_id = escape_string(args.id)
+    driver = get_driver()
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(f'''
+                match $n isa tech-recon-note, has id "{note_id}";
+                fetch {{
+                    "id": $n.id,
+                    "topic": $n.topic,
+                    "format": $n.format,
+                    "content": $n.content,
+                    "created_at": $n.created-at
+                }};
+            ''').resolve())
+
+            if not results:
+                print(json.dumps({"success": False, "error": f"Note {args.id} not found"}))
+                sys.exit(1)
+
+            note = results[0]
+
+            # Fetch tags
+            tag_results = list(tx.query(f'''
+                match $n isa tech-recon-note, has id "{note_id}", has tech-recon-tag $tag;
+                fetch {{ "tag": $tag }};
+            ''').resolve())
+            tags = [t.get("tag") for t in tag_results if t.get("tag")]
+
+        print(json.dumps({
+            "success": True,
+            "note": {
+                "id": note.get("id"),
+                "topic": note.get("topic"),
+                "format": note.get("format"),
+                "content": note.get("content"),
+                "tags": tags,
+                "created_at": str(note.get("created_at", "")),
+            },
+        }))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+# =============================================================================
+# ANALYSIS COMMANDS
+# =============================================================================
+
+
+def cmd_add_analysis(args):
+    """Add an Observable Plot analysis to an investigation."""
+    inv_id = escape_string(args.investigation)
+    ana_id = generate_id("tra")
+    ts = get_timestamp()
+    title = escape_string(args.title)
+    plot_code = escape_string(args.plot_code)
+    tql_query = escape_string(args.query)
+    analysis_type = escape_string(args.analysis_type)
+    description = escape_string(args.description) if args.description else ""
+
+    driver = get_driver()
+    try:
+        # Verify investigation exists
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            check = list(tx.query(f'''
+                match $inv isa tech-recon-investigation, has id "{inv_id}";
+                fetch {{ "id": $inv.id }};
+            ''').resolve())
+        if not check:
+            print(json.dumps({"success": False, "error": f"Investigation {args.investigation} not found"}))
+            sys.exit(1)
+
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            # Insert analysis artifact
+            insert_q = f'''
+                insert $a isa tech-recon-analysis,
+                    has id "{ana_id}",
+                    has name "{title}",
+                    has tech-recon-title "{title}",
+                    has analysis-type "{analysis_type}",
+                    has plot-code "{plot_code}",
+                    has tql-query "{tql_query}",
+                    has format "javascript",
+                    has created-at {ts};
+            '''
+            if description:
+                insert_q = f'''
+                    insert $a isa tech-recon-analysis,
+                        has id "{ana_id}",
+                        has name "{title}",
+                        has tech-recon-title "{title}",
+                        has analysis-type "{analysis_type}",
+                        has plot-code "{plot_code}",
+                        has tql-query "{tql_query}",
+                        has format "javascript",
+                        has content "{description}",
+                        has created-at {ts};
+                '''
+            tx.query(insert_q).resolve()
+
+            # Link analysis to investigation
+            link_q = f'''
+                match
+                    $inv isa tech-recon-investigation, has id "{inv_id}";
+                    $a isa tech-recon-analysis, has id "{ana_id}";
+                insert
+                    (analysis: $a, investigation: $inv) isa analysis-of;
+            '''
+            tx.query(link_q).resolve()
+            tx.commit()
+
+        print(json.dumps({
+            "success": True,
+            "analysis": {
+                "id": ana_id,
+                "title": args.title,
+                "type": args.analysis_type,
+                "investigation_id": args.investigation,
+            },
+        }))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+def cmd_list_analyses(args):
+    """List all analyses linked to an investigation."""
+    inv_id = escape_string(args.investigation)
+    driver = get_driver()
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(f'''
+                match
+                    $inv isa tech-recon-investigation, has id "{inv_id}";
+                    $a isa tech-recon-analysis;
+                    (analysis: $a, investigation: $inv) isa analysis-of;
+                fetch {{
+                    "id": $a.id,
+                    "title": $a.tech-recon-title,
+                    "type": $a.analysis-type,
+                    "content": $a.content
+                }};
+            ''').resolve())
+
+        analyses = []
+        for r in results:
+            desc = r.get("content") or ""
+            analyses.append({
+                "id": r.get("id"),
+                "title": r.get("title"),
+                "type": r.get("type"),
+                "description_preview": desc[:200] if desc else None,
+            })
+
+        print(json.dumps({"success": True, "analyses": analyses}))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+def cmd_show_analysis(args):
+    """Show full details of an analysis including plot code and query."""
+    ana_id = escape_string(args.id)
+    driver = get_driver()
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(f'''
+                match $a isa tech-recon-analysis, has id "{ana_id}";
+                fetch {{
+                    "id": $a.id,
+                    "title": $a.tech-recon-title,
+                    "type": $a.analysis-type,
+                    "plot_code": $a.plot-code,
+                    "query": $a.tql-query,
+                    "description": $a.content
+                }};
+            ''').resolve())
+
+        if not results:
+            print(json.dumps({"success": False, "error": f"Analysis {args.id} not found"}))
+            sys.exit(1)
+
+        a = results[0]
+        print(json.dumps({
+            "success": True,
+            "analysis": {
+                "id": a.get("id"),
+                "title": a.get("title"),
+                "type": a.get("type"),
+                "plot_code": a.get("plot_code"),
+                "query": a.get("query"),
+                "description": a.get("description"),
+            },
+        }))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+def cmd_run_analysis(args):
+    """Execute a stored analysis: fetch its plot code and run its TypeQL query."""
+    ana_id = escape_string(args.id)
+    driver = get_driver()
+    try:
+        # Step 1: Get the analysis plot code and stored query
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(f'''
+                match $a isa tech-recon-analysis, has id "{ana_id}";
+                fetch {{
+                    "plot_code": $a.plot-code,
+                    "query": $a.tql-query
+                }};
+            ''').resolve())
+
+        if not results:
+            print(json.dumps({"success": False, "error": f"Analysis {args.id} not found"}))
+            sys.exit(1)
+
+        plot_code = results[0].get("plot_code")
+        tql_query = results[0].get("query")
+
+        # Step 2: Execute the stored TypeQL query
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            data_results = list(tx.query(tql_query).resolve())
+
+        print(json.dumps({
+            "success": True,
+            "analysis_id": args.id,
+            "plot_code": plot_code,
+            "data": data_results,
+        }))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+def cmd_plan_analyses(args):
+    """Return investigation context for Claude to propose a visualization plan."""
+    inv_id = escape_string(args.investigation)
+    driver = get_driver()
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            # Fetch investigation details
+            inv_results = list(tx.query(f'''
+                match $inv isa tech-recon-investigation, has id "{inv_id}";
+                fetch {{
+                    "id": $inv.id,
+                    "name": $inv.name,
+                    "goal": $inv.goal-description,
+                    "criteria": $inv.success-criteria
+                }};
+            ''').resolve())
+
+            if not inv_results:
+                print(json.dumps({"success": False, "error": f"Investigation {args.investigation} not found"}))
+                sys.exit(1)
+
+            inv = inv_results[0]
+
+            # Fetch all systems for the investigation
+            sys_results = list(tx.query(f'''
+                match
+                    $inv isa tech-recon-investigation, has id "{inv_id}";
+                    $sys isa tech-recon-system;
+                    (system: $sys, investigation: $inv) isa investigated-in;
+                fetch {{
+                    "id": $sys.id,
+                    "name": $sys.name,
+                    "status": $sys.tech-recon-status
+                }};
+            ''').resolve())
+
+            systems = [
+                {"id": r.get("id"), "name": r.get("name"), "status": r.get("status")}
+                for r in sys_results
+            ]
+
+            # Fetch notes for each system
+            notes_by_system = {}
+            for sys_item in systems:
+                sid = escape_string(sys_item["id"])
+                note_results = list(tx.query(f'''
+                    match
+                        $sys isa tech-recon-system, has id "{sid}";
+                        $n isa tech-recon-note;
+                        (note: $n, subject: $sys) isa aboutness;
+                        $n has topic $topic;
+                        $n has format $fmt;
+                        $n has content $content;
+                    fetch {{
+                        "topic": $topic,
+                        "format": $fmt,
+                        "content": $content
+                    }};
+                ''').resolve())
+                if note_results:
+                    notes_by_system[sys_item["id"]] = [
+                        {
+                            "topic": r.get("topic"),
+                            "format": r.get("format"),
+                            "content_preview": (r.get("content") or "")[:200],
+                        }
+                        for r in note_results
+                    ]
+
+            # Fetch existing analyses
+            ana_results = list(tx.query(f'''
+                match
+                    $inv isa tech-recon-investigation, has id "{inv_id}";
+                    $a isa tech-recon-analysis;
+                    (analysis: $a, investigation: $inv) isa analysis-of;
+                fetch {{
+                    "id": $a.id,
+                    "title": $a.tech-recon-title,
+                    "type": $a.analysis-type
+                }};
+            ''').resolve())
+
+            existing_analyses = [
+                {"id": r.get("id"), "title": r.get("title"), "type": r.get("type")}
+                for r in ana_results
+            ]
+
+        print(json.dumps({
+            "success": True,
+            "investigation": {
+                "id": inv.get("id"),
+                "name": inv.get("name"),
+                "goal": inv.get("goal"),
+                "criteria": inv.get("criteria"),
+            },
+            "systems": systems,
+            "notes_by_system": notes_by_system,
+            "existing_analyses": existing_analyses,
+        }))
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+    finally:
+        driver.close()
+
+
+# =============================================================================
 # ARGUMENT PARSER
 # =============================================================================
 
@@ -1391,6 +1910,68 @@ def build_parser():
     # -- cache-stats --
     p = subparsers.add_parser("cache-stats", help="Show cache directory size by content type")
     p.set_defaults(func=cmd_cache_stats)
+
+    # -- write-note --
+    p = subparsers.add_parser("write-note", help="Write a note and attach it to a system or investigation")
+    p.add_argument("--subject-id", required=True, help="ID of the system or investigation to attach note to")
+    p.add_argument("--topic", required=True, help="Note topic / heading")
+    p.add_argument("--format", required=True, choices=["markdown", "yaml", "json"], help="Note format")
+    p.add_argument("--content", required=True, help="Note content")
+    p.add_argument("--tags", help="Comma-separated list of tags")
+    p.set_defaults(func=cmd_write_note)
+
+    # -- list-notes --
+    p = subparsers.add_parser("list-notes", help="List notes attached to a subject entity")
+    p.add_argument("--subject-id", required=True, help="System or investigation ID")
+    p.add_argument("--topic", help="Filter by topic")
+    p.add_argument("--format", choices=["markdown", "yaml", "json"], help="Filter by format")
+    p.set_defaults(func=cmd_list_notes)
+
+    # -- show-note --
+    p = subparsers.add_parser("show-note", help="Show full note details including all tags")
+    p.add_argument("--id", required=True, help="Note ID")
+    p.set_defaults(func=cmd_show_note)
+
+    # -- add-analysis --
+    p = subparsers.add_parser("add-analysis", help="Add an Observable Plot analysis to an investigation")
+    p.add_argument("--investigation", required=True, help="Investigation ID")
+    p.add_argument("--title", required=True, help="Analysis title")
+    p.add_argument("--description", help="Analysis description (optional)")
+    p.add_argument("--plot-code", required=True, help="Observable Plot JavaScript code")
+    p.add_argument("--query", required=True, help="TypeQL fetch query that produces the data")
+    p.add_argument(
+        "--analysis-type",
+        default="plot",
+        choices=["plot", "table", "prose"],
+        help="Analysis type (default: plot)",
+    )
+    p.set_defaults(func=cmd_add_analysis)
+
+    # -- list-analyses --
+    p = subparsers.add_parser("list-analyses", help="List analyses linked to an investigation")
+    p.add_argument("--investigation", required=True, help="Investigation ID")
+    p.set_defaults(func=cmd_list_analyses)
+
+    # -- show-analysis --
+    p = subparsers.add_parser("show-analysis", help="Show full analysis details including plot code and query")
+    p.add_argument("--id", required=True, help="Analysis ID")
+    p.set_defaults(func=cmd_show_analysis)
+
+    # -- run-analysis --
+    p = subparsers.add_parser(
+        "run-analysis",
+        help="Execute a stored analysis: run its TypeQL query and return data + plot code",
+    )
+    p.add_argument("--id", required=True, help="Analysis ID")
+    p.set_defaults(func=cmd_run_analysis)
+
+    # -- plan-analyses --
+    p = subparsers.add_parser(
+        "plan-analyses",
+        help="Return investigation context (systems, notes, existing analyses) for visualization planning",
+    )
+    p.add_argument("--investigation", required=True, help="Investigation ID")
+    p.set_defaults(func=cmd_plan_analyses)
 
     return parser
 
