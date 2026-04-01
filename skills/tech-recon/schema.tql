@@ -94,7 +94,6 @@ entity tech-recon-artifact sub artifact,
 
 entity tech-recon-analysis sub artifact,
     owns title,
-    owns description,
     owns analysis-type,
     owns plot-code,
     owns tql-query,
