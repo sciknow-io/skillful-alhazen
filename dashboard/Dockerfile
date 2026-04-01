@@ -111,7 +111,7 @@ COPY src/skillful_alhazen/__init__.py ./src/skillful_alhazen/
 COPY local_skills/jobhunt/jobhunt.py ./.claude/skills/jobhunt/
 COPY local_skills/jobhunt/job_forager.py ./.claude/skills/jobhunt/
 COPY skills/typedb-notebook/typedb_notebook.py ./.claude/skills/typedb-notebook/
-COPY local_skills/techrecon/techrecon.py ./.claude/skills/techrecon/
+COPY skills/tech-recon/tech_recon.py ./.claude/skills/tech-recon/
 COPY local_skills/alg-precision-therapeutics/alg_precision_therapeutics.py ./.claude/skills/alg-precision-therapeutics/
 COPY skills/skill-builder/skill_builder.py ./.claude/skills/skill-builder/
 COPY local_skills/they-said-whaaa/they_said_whaaa.py ./.claude/skills/they-said-whaaa/
