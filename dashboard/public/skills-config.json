@@ -18,11 +18,11 @@
     "color": "indigo"
   },
   {
-    "slug": "techrecon",
+    "slug": "tech-recon",
     "enabled": true,
-    "name": "Tech Recon Dashboard",
-    "description": "Systematically investigate software systems, libraries, and frameworks.",
-    "url_path": "/techrecon",
+    "name": "Tech Recon (v2)",
+    "description": "Goal-driven technology investigation with dynamic Observable Plot analysis.",
+    "url_path": "/tech-recon",
     "icon": "Search",
     "color": "cyan"
   },

@@ -74,16 +74,6 @@ skills:
       icon: Briefcase
       color: indigo
 
-  - name: techrecon
-    path: skills/techrecon
-    dashboard:
-      enabled: true
-      name: "Tech Recon Dashboard"
-      description: "Systematically investigate software systems, libraries, and frameworks."
-      url_path: "/techrecon"
-      icon: Search
-      color: cyan
-
   - name: tech-recon
     path: skills/tech-recon
     dashboard:
