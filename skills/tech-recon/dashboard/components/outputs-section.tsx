@@ -36,6 +36,11 @@ export function OutputsSection({ synthesisNote, completionNote, investigationId 
         >
           <FileText className="w-3.5 h-3.5 shrink-0" />
           Synthesis Report
+          {synthesisNote?.created_at && (
+            <span className="text-xs text-muted-foreground/60 font-normal ml-1">
+              · {new Date(synthesisNote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          )}
           {!synthesisNote && <span className="text-xs text-muted-foreground/50 font-normal">— missing</span>}
         </button>
 
@@ -51,6 +56,11 @@ export function OutputsSection({ synthesisNote, completionNote, investigationId 
         >
           <ClipboardCheck className="w-3.5 h-3.5 shrink-0" />
           Completion Assessment
+          {completionNote?.created_at && (
+            <span className="text-xs text-muted-foreground/60 font-normal ml-1">
+              · {new Date(completionNote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          )}
           {!completionNote && <span className="text-xs text-muted-foreground/50 font-normal">— missing</span>}
         </button>
       </div>

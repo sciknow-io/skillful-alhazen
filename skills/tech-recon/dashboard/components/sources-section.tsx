@@ -141,12 +141,16 @@ function SystemDetail({ system, data }: { system: TechReconSystem; data: SystemD
 interface SensemakingSectionProps {
   systems: TechReconSystem[];
   systemDataMap: Record<string, SystemData>;
+  selectedIteration?: number;
 }
 
-export function SensemakingSection({ systems, systemDataMap }: SensemakingSectionProps) {
+export function SensemakingSection({ systems, systemDataMap, selectedIteration }: SensemakingSectionProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = systems.find(s => s.id === selectedId);
-  const selectedData = selectedId ? (systemDataMap[selectedId] ?? { artifacts: [], notes: [] }) : null;
+  const rawData = selectedId ? (systemDataMap[selectedId] ?? { artifacts: [], notes: [] }) : null;
+  const selectedData = rawData && selectedIteration !== undefined
+    ? { ...rawData, notes: rawData.notes.filter(n => (n.iteration_number ?? 1) === selectedIteration) }
+    : rawData;
 
   return (
     <div className="space-y-4">

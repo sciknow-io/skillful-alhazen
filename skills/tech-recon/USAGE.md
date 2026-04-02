@@ -194,6 +194,56 @@ uv run python .claude/skills/tech-recon/tech_recon.py show-note \
 - Use **YAML front-matter + markdown body** when structured fields matter (e.g., integration notes with `priority:`, `effort:`)
 - Use **JSON** only for machine-readable structured data (e.g., benchmark results table)
 
+**Iteration tagging:** When writing notes for a specific investigation cycle, pass `--iteration N`:
+```bash
+uv run python .claude/skills/tech-recon/tech_recon.py write-note \
+    --system SYSTEM_ID \
+    --topic assessment \
+    --content "## v2 Assessment\n\n..." \
+    --iteration 2
+```
+
+**Replace a note:** Use `--replace` to delete any existing note with the same topic before writing:
+```bash
+uv run python .claude/skills/tech-recon/tech_recon.py write-note \
+    --investigation INVESTIGATION_ID \
+    --topic completion-assessment \
+    --content "## Completion Assessment\n\n..." \
+    --iteration 2 \
+    --replace
+```
+
+---
+
+## 5a. Iteration Workflow
+
+Each investigation cycle produces a numbered iteration. Iteration 1 is the baseline. After evaluating and deciding to improve, advance the counter and tag subsequent notes with the new iteration number.
+
+**Check current iteration:**
+```bash
+uv run python .claude/skills/tech-recon/tech_recon.py show-investigation \
+    --id INVESTIGATION_ID 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print('iteration:', d['investigation']['iteration_number'])"
+```
+
+**Advance to the next iteration:**
+```bash
+uv run python .claude/skills/tech-recon/tech_recon.py advance-iteration \
+    --investigation INVESTIGATION_ID
+# Returns: { "success": true, "iteration": 2 }
+```
+
+**Write new notes tagged with the new iteration:**
+```bash
+uv run python .claude/skills/tech-recon/tech_recon.py write-note \
+    --investigation INVESTIGATION_ID \
+    --topic completion-assessment \
+    --content "## v2 Assessment\n\n..." \
+    --iteration 2
+```
+
+**Dashboard:** The investigation page shows a `v1 | v2 | v3` selector bar when multiple iterations exist. Selecting a version filters all notes (sensemaking and outputs) to that iteration. The current iteration is selected by default.
+
 ---
 
 ## 6. Viz Planning Workflow

@@ -322,7 +322,8 @@ def cmd_show_investigation(args):
                     "name": $inv.name,
                     "status": $inv.tech-recon-status,
                     "goal": $inv.goal-description,
-                    "criteria": $inv.success-criteria
+                    "criteria": $inv.success-criteria,
+                    "iteration": $inv.iteration-number
                 }};
             ''').resolve())
 
@@ -358,6 +359,7 @@ def cmd_show_investigation(args):
                 "goal": inv.get("goal"),
                 "criteria": inv.get("criteria"),
                 "status": inv.get("status"),
+                "iteration_number": inv.get("iteration") or 1,
                 "systems_count": len(sys_results),
                 "analyses_count": len(ana_results),
             },
@@ -640,6 +642,45 @@ def cmd_delete_investigation(args):
                 "analyses": len(analysis_ids),
             },
         }))
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+
+
+def cmd_advance_iteration(args):
+    """Increment the investigation's current iteration counter."""
+    inv_id = escape_string(args.investigation)
+    try:
+        driver = get_driver()
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            check = list(tx.query(f'''
+                match $i isa tech-recon-investigation, has id "{inv_id}";
+                fetch {{ "id": $i.id }};
+            ''').resolve())
+            if not check:
+                print(json.dumps({"success": False, "error": f"Investigation {args.investigation} not found"}))
+                sys.exit(1)
+            iter_results = list(tx.query(f'''
+                match $i isa tech-recon-investigation, has id "{inv_id}", has iteration-number $n;
+                fetch {{ "n": $n }};
+            ''').resolve())
+            current = iter_results[0].get("n") if iter_results else None
+
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            if current is not None:
+                tx.query(f'''
+                    match $i isa tech-recon-investigation, has id "{inv_id}",
+                          has iteration-number $old;
+                    delete has $old of $i;
+                ''').resolve()
+            new_iter = (current or 1) + 1
+            tx.query(f'''
+                match $i isa tech-recon-investigation, has id "{inv_id}";
+                insert $i has iteration-number {new_iter};
+            ''').resolve()
+            tx.commit()
+
+        print(json.dumps({"success": True, "investigation": args.investigation, "iteration": new_iter}))
     except Exception as e:
         print(json.dumps({"success": False, "error": str(e)}))
         sys.exit(1)
@@ -1967,7 +2008,19 @@ def cmd_write_note(args):
             sys.exit(1)
 
         with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            # If --replace, delete existing notes with same topic on same subject
+            if getattr(args, 'replace', False):
+                old_ids = [r["id"] for r in tx.query(f'''
+                    match $n isa note, has topic "{topic}";
+                          (note: $n, subject: $e) isa aboutness;
+                          $e isa identifiable-entity, has id "{subject_id}";
+                    fetch {{ "id": $n.id }};
+                ''').resolve()]
+                for oid in old_ids:
+                    tx.query(f'match $n isa note, has id "{escape_string(oid)}"; delete $n;').resolve()
+
             # Insert note
+            iter_num = getattr(args, 'iteration', 1) or 1
             insert_q = f'''
                 insert $n isa tech-recon-note,
                     has id "{note_id}",
@@ -1975,6 +2028,7 @@ def cmd_write_note(args):
                     has topic "{topic}",
                     has format "{fmt}",
                     has content "{content}",
+                    has iteration-number {iter_num},
                     has created-at {ts};
             '''
             tx.query(insert_q).resolve()
@@ -2042,15 +2096,17 @@ def cmd_list_notes(args):
                     $n has format $fmt;
                     $n has content $content;
                     $n has id $nid;
+                    $n has created-at $created_at;
                 fetch {{
                     "id": $nid,
                     "topic": $topic,
                     "format": $fmt,
-                    "content": $content
+                    "content": $content,
+                    "created_at": $created_at
                 }};
             ''').resolve())
 
-            # Fetch tags per note
+            # Fetch tags and iteration per note
             notes = []
             for r in results:
                 note_id_val = r.get("id")
@@ -2060,11 +2116,19 @@ def cmd_list_notes(args):
                     fetch {{ "tag": $tag }};
                 ''').resolve())
                 tags = [t.get("tag") for t in tag_results if t.get("tag")]
+                # Fetch iteration-number (optional — legacy notes may not have it)
+                iter_results = list(tx.query(f'''
+                    match $n isa tech-recon-note, has id "{escape_string(note_id_val)}", has iteration-number $iter;
+                    fetch {{ "iter": $iter }};
+                ''').resolve())
+                iteration_number = iter_results[0].get("iter") if iter_results else 1
                 notes.append({
                     "id": note_id_val,
                     "topic": r.get("topic"),
                     "format": r.get("format"),
                     "tags": tags,
+                    "iteration_number": iteration_number or 1,
+                    "created_at": str(r.get("created_at", "")),
                     "content_preview": content_val[:200],
                 })
 
@@ -2810,6 +2874,11 @@ def build_parser():
     p.add_argument("--success-criteria", help="New success criteria")
     p.set_defaults(func=cmd_update_investigation)
 
+    # -- advance-iteration --
+    p = subparsers.add_parser("advance-iteration", help="Increment investigation iteration counter")
+    p.add_argument("--investigation", required=True, help="Investigation ID")
+    p.set_defaults(func=cmd_advance_iteration)
+
     # -- delete-note --
     p = subparsers.add_parser("delete-note", help="Delete a note by ID")
     p.add_argument("--id", required=True, help="Note ID")
@@ -2930,6 +2999,8 @@ def build_parser():
     p.add_argument("--format", required=True, choices=["markdown", "yaml", "json"], help="Note format")
     p.add_argument("--content", required=True, help="Note content")
     p.add_argument("--tags", help="Comma-separated list of tags")
+    p.add_argument("--iteration", type=int, default=1, help="Iteration number for this note (default: 1)")
+    p.add_argument("--replace", action="store_true", help="Replace existing notes with same topic on same subject")
     p.set_defaults(func=cmd_write_note)
 
     # -- list-notes --

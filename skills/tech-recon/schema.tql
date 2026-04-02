@@ -38,6 +38,7 @@ attribute tech-recon-status, value string;
 attribute tech-recon-language, value string;
 attribute tech-recon-title, value string;
 attribute tech-recon-tag, value string;
+attribute iteration-number, value integer;
 
 
 # -----------------------------------------------------------------------------
@@ -69,6 +70,7 @@ entity tech-recon-investigation sub collection,
     owns goal-description,
     owns success-criteria,
     owns tech-recon-status,
+    owns iteration-number,
     plays investigated-in:investigation,
     plays sourced-from:source,
     plays analysis-of:investigation;
@@ -113,7 +115,8 @@ entity tech-recon-analysis sub artifact,
 
 entity tech-recon-note sub note,
     owns topic,
-    owns tech-recon-tag;
+    owns tech-recon-tag,
+    owns iteration-number;
     # inherits plays aboutness:note from note base type
 
 

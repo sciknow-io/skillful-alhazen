@@ -51,6 +51,7 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
   const [activeSection, setActiveSection] = useState<SectionKey>('scope');
   const [systemDataMap, setSystemDataMap] = useState<Record<string, SystemData> | null>(null);
   const [systemDataLoading, setSystemDataLoading] = useState(false);
+  const [selectedIteration, setSelectedIteration] = useState<number | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -120,10 +121,20 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
 
   const { investigation, systems, notes, analyses } = data;
 
-  // Derive special investigation-level notes
-  const vizPlanNotes = notes.filter(n => n.topic === 'viz-plan');
-  const synthesisNote = notes.find(n => n.topic === 'synthesis-report') ?? null;
-  const completionNote = notes.find(n => n.topic === 'completion-assessment') ?? null;
+  // Compute available iterations from notes
+  const iterations = Array.from(
+    new Set(notes.map(n => n.iteration_number ?? 1))
+  ).sort((a, b) => a - b);
+  const currentIteration = investigation.iteration_number ?? 1;
+  const activeIteration = selectedIteration ?? currentIteration;
+
+  // Filter notes by selected iteration
+  const iterNotes = notes.filter(n => (n.iteration_number ?? 1) === activeIteration);
+
+  // Derive special investigation-level notes (iteration-filtered)
+  const vizPlanNotes = iterNotes.filter(n => n.topic === 'viz-plan');
+  const synthesisNote = iterNotes.find(n => n.topic === 'synthesis-report') ?? null;
+  const completionNote = iterNotes.find(n => n.topic === 'completion-assessment') ?? null;
 
   // Compute stage completion (data-driven)
   const totalArtifacts = systems.reduce((s, sys) => s + (sys.artifacts_count ?? 0), 0);
@@ -199,6 +210,29 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
         </div>
       </div>
 
+      {/* Iteration selector */}
+      {iterations.length > 1 && (
+        <div className="border-b border-border/50 bg-card/10">
+          <div className="container mx-auto px-4 py-2 flex items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">Iteration:</span>
+            {iterations.map(iter => (
+              <button
+                key={iter}
+                onClick={() => setSelectedIteration(iter)}
+                className={[
+                  'px-2.5 py-1 rounded text-xs border transition-all',
+                  iter === activeIteration
+                    ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-300 font-semibold'
+                    : 'border-border/50 text-muted-foreground hover:border-border',
+                ].join(' ')}
+              >
+                v{iter}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main two-column layout */}
       <div className="container mx-auto px-4 py-6 flex gap-6 flex-1">
         <aside className="w-48 shrink-0">
@@ -208,6 +242,13 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
         </aside>
 
         <main className="flex-1 min-w-0">
+          {/* Investigation name */}
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+              {investigation.name}
+            </h1>
+          </div>
+
           {activeSection === 'scope' && (
             <ScopeSection investigation={investigation} />
           )}
@@ -219,7 +260,7 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
           {activeSection === 'sensemaking' && (
             systemDataLoading
               ? spinner
-              : <SensemakingSection systems={systems} systemDataMap={systemDataMap ?? {}} />
+              : <SensemakingSection systems={systems} systemDataMap={systemDataMap ?? {}} selectedIteration={activeIteration} />
           )}
           {activeSection === 'analysis' && (
             <AnalysisSection analyses={analyses} vizPlanNotes={vizPlanNotes} investigationId={id} />

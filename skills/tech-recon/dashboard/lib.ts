@@ -36,6 +36,7 @@ export interface Investigation {
   status: string;
   goal: string;
   criteria: string;
+  iteration_number?: number;
 }
 
 export interface TechReconSystem {
@@ -67,6 +68,8 @@ export interface TechReconNote {
   tags: string[];
   content?: string;
   content_preview?: string;
+  iteration_number?: number;
+  created_at?: string;
 }
 
 export interface SystemData {
