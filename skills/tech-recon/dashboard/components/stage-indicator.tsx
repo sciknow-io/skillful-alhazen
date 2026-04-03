@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, XCircle } from 'lucide-react';
 
 export interface StageCompletion {
   scope: boolean;
@@ -40,24 +40,18 @@ export function StageIndicator({ completion }: StageIndicatorProps) {
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${
                   isCompleted
                     ? 'bg-green-500/20 border-green-500 text-green-400'
-                    : isCurrent
-                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-400'
-                    : 'bg-muted/30 border-border/50 text-muted-foreground/40'
+                    : 'bg-red-500/20 border-red-500 text-red-400'
                 }`}
               >
                 {isCompleted ? (
                   <CheckCircle2 className="w-3.5 h-3.5" />
                 ) : (
-                  <span>{idx + 1}</span>
+                  <XCircle className="w-3.5 h-3.5" />
                 )}
               </div>
               <span
                 className={`text-xs whitespace-nowrap font-medium ${
-                  isCompleted
-                    ? 'text-green-400'
-                    : isCurrent
-                    ? 'text-cyan-400'
-                    : 'text-muted-foreground/40'
+                  isCompleted ? 'text-green-400' : 'text-red-400'
                 }`}
               >
                 {stage.label}
