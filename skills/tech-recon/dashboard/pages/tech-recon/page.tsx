@@ -38,7 +38,7 @@ export default async function TechReconPage() {
               Hub
             </Link>
             <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-[#5aadaf] to-[#4a7ab5] bg-clip-text text-transparent">
                 Tech Recon
               </h1>
               <p className="text-sm text-muted-foreground">

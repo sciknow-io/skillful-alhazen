@@ -180,7 +180,7 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
                 Tech Recon
               </Link>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-[#5aadaf] to-[#4a7ab5] bg-clip-text text-transparent">
                   {investigation.name}
                 </h1>
                 {investigation.status && (
@@ -244,7 +244,7 @@ export default function InvestigationPage({ params }: InvestigationPageProps) {
         <main className="flex-1 min-w-0">
           {/* Investigation name */}
           <div className="mb-6">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-[#5aadaf] to-[#4a7ab5] bg-clip-text text-transparent">
               {investigation.name}
             </h1>
           </div>
