@@ -74,6 +74,8 @@ Execute the ingestion process defined in the skill's specification. The specific
 
 **User-assisted ingestion:** Some sources require user participation — content behind a paywall, pages requiring authentication, or files the user must download manually. In those cases, guide the user through the acquisition step and copy the material to the cache. Facilitating user-assisted acquisition is a first-class part of the ingestion workflow, not a fallback.
 
+**Access in sensemaking:** Cached files are readable in Phase 4 via the native `Read` tool (supports PDFs, images, notebooks). See Phase 4 for details.
+
 ---
 
 ### Phase 4: Sensemaking (detailed and structured)
@@ -93,6 +95,8 @@ For each ingested entity, one sensemaking subagent reads all artifacts and write
 | `performance` | Benchmarks, scaling characteristics |
 | `community` | Activity, maintainers, ecosystem |
 | `assessment` | Fit against each success criterion (explicit per-criterion scoring) |
+
+**Reading cached artifacts:** When a sensemaking subagent needs to read a local file from the artifact cache (`~/.alhazen/cache/`), always use the native `Read` tool — NOT Bash `cat` or `head`. The `Read` tool handles PDFs (use the `pages:` parameter for large documents), images (rendered natively as multimodal input), and Jupyter notebooks. Use `Grep` to search across cached files rather than `grep`/`rg`. See `skills/skill-builder/claude-native-capabilities.md` for the full reference.
 
 **Iterative sensemaking:** Notes from earlier passes provide context for later passes. Re-analyze after getting broader context across multiple entities.
 
