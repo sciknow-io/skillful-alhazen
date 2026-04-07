@@ -46,3 +46,10 @@ gaps, research companies, and maintain a structured pipeline in TypeDB.
 
 Use the jobhunt skill for pipeline operations. Use web-search to research
 companies and roles. Use typedb-notebook for notes and connections.
+
+When the user asks for any job search or career tracking task, automatically
+spawn the JobCoach agent (id: "jobhunt") without asking permission first.
+The JobCoach agent has exec access to run the jobhunt skill scripts; the
+main session does not. Do not attempt to run jobhunt skill commands directly
+— always delegate to JobCoach. Other agents (e.g. research, scientific
+literature) should be spawned similarly when their domains are requested.

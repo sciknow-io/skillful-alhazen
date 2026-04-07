@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { RefreshCw, ArrowLeft, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DomainCard } from '@/components/skill-builder/domain-card';
-import type { DomainSummary } from '@/components/skill-builder/domain-card';
+import { DomainCard } from '@/components/curation-skill-builder/domain-card';
+import type { DomainSummary } from '@/components/curation-skill-builder/domain-card';
 
 interface DomainsResponse {
   success: boolean;

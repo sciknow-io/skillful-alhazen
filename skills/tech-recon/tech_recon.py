@@ -2378,13 +2378,14 @@ def cmd_run_analysis(args):
     ana_id = escape_string(args.id)
     driver = get_driver()
     try:
-        # Step 1: Get the analysis plot code and stored query
+        # Step 1: Get the analysis plot code, stored query, and pre-computed content
         with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
             results = list(tx.query(f'''
                 match $a isa tech-recon-analysis, has id "{ana_id}";
                 fetch {{
                     "plot_code": $a.plot-code,
-                    "query": $a.tql-query
+                    "query": $a.tql-query,
+                    "content": $a.content
                 }};
             ''').resolve())
 
@@ -2394,6 +2395,25 @@ def cmd_run_analysis(args):
 
         plot_code = results[0].get("plot_code")
         tql_query = results[0].get("query")
+        content = results[0].get("content")
+
+        # If no TypeQL query, fall back to pre-computed content stored in the content attribute
+        if not tql_query:
+            import json as _json
+            data = []
+            if content:
+                try:
+                    parsed = _json.loads(content)
+                    data = parsed if isinstance(parsed, list) else [parsed]
+                except Exception:
+                    pass
+            print(json.dumps({
+                "success": True,
+                "analysis_id": args.id,
+                "plot_code": plot_code,
+                "data": data,
+            }))
+            return
 
         # Step 2: Execute the stored TypeQL query (must be a fetch query)
         if "fetch" not in tql_query.lower():

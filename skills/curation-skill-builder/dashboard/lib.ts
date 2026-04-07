@@ -5,7 +5,7 @@ import path from 'path';
 const execFileAsync = promisify(execFile);
 
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(process.cwd());
-const SCRIPT = path.join(PROJECT_ROOT, '.claude/skills/skill-builder/skill_builder.py');
+const SCRIPT = path.join(PROJECT_ROOT, '.claude/skills/curation-skill-builder/skill_builder.py');
 
 async function runDomainModeling(args: string[]): Promise<unknown> {
   const { stdout } = await execFileAsync(

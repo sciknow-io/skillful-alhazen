@@ -107,14 +107,17 @@ WORKDIR /app
 COPY --from=python-deps /app/.venv /app/.venv
 COPY pyproject.toml uv.lock README.md ./
 COPY src/skillful_alhazen/__init__.py ./src/skillful_alhazen/
-# Copy skill scripts directly from real source paths (avoids .claude/skills/* symlinks)
-COPY local_skills/jobhunt/jobhunt.py ./.claude/skills/jobhunt/
-COPY local_skills/jobhunt/job_forager.py ./.claude/skills/jobhunt/
-COPY skills/typedb-notebook/typedb_notebook.py ./.claude/skills/typedb-notebook/
-COPY skills/tech-recon/tech_recon.py ./.claude/skills/tech-recon/
-COPY local_skills/alg-precision-therapeutics/alg_precision_therapeutics.py ./.claude/skills/alg-precision-therapeutics/
-COPY skills/curation-skill-builder/skill_builder.py ./.claude/skills/curation-skill-builder/
-COPY local_skills/they-said-whaaa/they_said_whaaa.py ./.claude/skills/they-said-whaaa/
+# Copy all skills so the loop below can discover them (symlinks in local_skills/ resolve
+# correctly once both trees are present in the container)
+COPY skills/ ./skills/
+COPY local_skills/ ./local_skills/
+# Auto-discover all skill Python scripts and wire them into .claude/skills/<skill>/
+# This replaces hard-coded COPY lines — new skills are picked up automatically.
+RUN for skill_dir in local_skills/*/; do \
+      skill_name=$(basename "$skill_dir"); \
+      mkdir -p ".claude/skills/${skill_name}"; \
+      find "$skill_dir" -maxdepth 1 -name "*.py" -exec cp {} ".claude/skills/${skill_name}/" \; ; \
+    done
 # Copy Node.js build and dependencies
 COPY --from=node-builder /app/dashboard/.next ./.next
 COPY --from=node-builder /app/dashboard/public ./public

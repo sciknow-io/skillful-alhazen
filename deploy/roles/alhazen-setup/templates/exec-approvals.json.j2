@@ -2,7 +2,7 @@
   "version": 1,
   "defaults": {
     "security": "allowlist",
-    "ask": "on-miss",
+    "ask": "off",
     "askFallback": "deny",
     "autoAllowSkills": false
   },
@@ -10,6 +10,8 @@
     "jobhunt": {
       "security": "allowlist",
       "ask": "off",
+      "askFallback": "allowlist",
+      "autoAllowSkills": true,
       "allowlist": [
         { "pattern": "/usr/bin/ls" },
         { "pattern": "/bin/ls" },
@@ -22,9 +24,24 @@
         { "pattern": "/usr/bin/find" },
         { "pattern": "/usr/bin/wc" },
         { "pattern": "/usr/bin/sort" },
+        { "pattern": "/bin/bash" },
+        { "pattern": "/bin/sh" },
+        { "pattern": "/bin/zsh" },
+{% if target_type == 'macmini' %}
+        { "pattern": "/opt/homebrew/bin/uv" },
+        { "pattern": "/opt/homebrew/bin/python3" },
+        { "pattern": "/Users/{{ openclaw_user }}/.local/bin/uv" },
+        { "pattern": "/Users/{{ openclaw_user }}/.local/share/uv/python/*/bin/python*" }
+{% else %}
         { "pattern": "/home/node/.local/bin/uv" },
-        { "pattern": "/usr/bin/python3" }
+        { "pattern": "/usr/bin/python3" },
+        { "pattern": "/home/node/.local/share/uv/python/*/bin/python*" }
+{% endif %}
       ]
+    },
+    "files": {
+      "security": "deny",
+      "ask": "always"
     }
   }
 }

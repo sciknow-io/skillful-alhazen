@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listDomains } from '@/lib/skill-builder';
+import { listDomains } from '@/lib/curation-skill-builder';
 
 export async function GET() {
   try {

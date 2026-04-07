@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, use } from 'react';
 import Link from 'next/link';
 import { RefreshCw, ArrowLeft, GitCommit, FlaskConical, AlertTriangle, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { PhaseOverview } from '@/components/skill-builder/phase-overview';
-import { GapsList } from '@/components/skill-builder/gaps-list';
-import { DecisionsList } from '@/components/skill-builder/decisions-list';
-import type { Gap } from '@/components/skill-builder/gaps-list';
-import type { Decision } from '@/components/skill-builder/decisions-list';
+import { PhaseOverview } from '@/components/curation-skill-builder/phase-overview';
+import { GapsList } from '@/components/curation-skill-builder/gaps-list';
+import { DecisionsList } from '@/components/curation-skill-builder/decisions-list';
+import type { Gap } from '@/components/curation-skill-builder/gaps-list';
+import type { Decision } from '@/components/curation-skill-builder/decisions-list';
 
 interface Goal {
   id: string;

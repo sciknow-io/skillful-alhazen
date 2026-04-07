@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDomain } from '@/lib/skill-builder';
+import { getDomain } from '@/lib/curation-skill-builder';
 
 export async function GET(
   _req: Request,

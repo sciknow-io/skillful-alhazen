@@ -101,7 +101,7 @@
     PATH: "{{ macos_path }}"
 
 - name: Install openclaw npm Package
-  shell: npm install -g openclaw@latest
+  shell: npm install -g openclaw@2026.4.1
   become: true
   become_user: "{{ openclaw_user }}"
   environment:
@@ -376,6 +376,18 @@
     - com.alhazen.mcp
     - com.alhazen.openclaw
 
+# Remove any doctor-installed user LaunchAgent that conflicts with our system LaunchDaemon.
+# openclaw doctor --fix installs ai.openclaw.gateway.plist as a user LaunchAgent which
+# fights our LaunchDaemon for port 18789 on every redeploy.
+- name: Remove doctor-installed openclaw LaunchAgent (if present)
+  file:
+    path: "{{ openclaw_home }}/Library/LaunchAgents/ai.openclaw.gateway.plist"
+    state: absent
+
+# Kill any lingering gateway process before loading so the LaunchDaemon gets a clean port.
+- name: Kill any lingering openclaw gateway process
+  shell: pkill -f "openclaw-gateway" 2>/dev/null || pkill -f "openclaw gateway" 2>/dev/null || true
+
 - name: Load Services
   shell: launchctl load /Library/LaunchDaemons/{{ item }}.plist
   loop:
@@ -391,30 +403,6 @@
   delay: 4
   register: litellm_health
   until: litellm_health.rc == 0
-  ignore_errors: true
-
-- name: Wait for OpenClaw Gateway to be Ready
-  shell: curl -sf http://127.0.0.1:18789/health
-  retries: 15
-  delay: 4
-  register: openclaw_health
-  until: openclaw_health.rc == 0
-  ignore_errors: true
-
-# Run doctor --fix to apply any automated config migrations (e.g. auto-enable telegram plugin).
-# Expected residual warnings after a clean deploy (all benign):
-#   "Gateway service not installed" — doctor looks for a LaunchAgent (user-level), but we
-#     intentionally use a LaunchDaemon (system-level) so the service starts headless at boot.
-#     openclaw docs confirm this is the correct pattern for headless servers.
-#   "Gateway bound to lan" — intentional; Mac Mini acts as LAN gateway.
-#   "Port 18789 in use, process details unavailable" — false alarm; lsof unavailable as this user.
-- name: Apply automated openclaw config fixes (doctor --fix)
-  shell: "{{ openclaw_home }}/.npm-global/bin/openclaw doctor --fix"
-  become: true
-  become_user: "{{ openclaw_user }}"
-  environment:
-    HOME: "{{ openclaw_home }}"
-    PATH: "{{ openclaw_home }}/.npm-global/bin:{{ macos_path }}"
   ignore_errors: true
 
 - name: Show Service Status

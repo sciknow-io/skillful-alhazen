@@ -17,8 +17,9 @@ tools:
   filesystem:
     enabled: true
     allowedPaths:
-      - "/opt/openclaw/workspace"
+      - "{{ openclaw_home }}/workspace"
+      - "{{ openclaw_home }}/.openclaw/skills"
     deniedPaths:
-      - "/home/openclaw/.ssh"
-      - "/home/openclaw/.openclaw/credentials"
+      - "{{ openclaw_home }}/.ssh"
+      - "{{ openclaw_home }}/.openclaw/credentials"
       - "/etc"
