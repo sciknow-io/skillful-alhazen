@@ -1,0 +1,45 @@
+name: Gap Triage
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            if (!body.includes('## What was missing')) return;
+
+            const labels = [];
+
+            const sevMatch = body.match(/\*\*Severity:\*\*\s*(minor|moderate|critical)/i);
+            if (sevMatch) labels.push('severity:' + sevMatch[1].toLowerCase());
+
+            const phaseMatch = body.match(/\*\*Phase:\*\*\s*(goal|entity-schema|source-schema|derivation|analysis)/i);
+            if (phaseMatch) labels.push('phase:' + phaseMatch[1].toLowerCase());
+
+            const skillMatch = body.match(/\*\*Skill:\*\*\s*([a-z0-9][a-z0-9-]*)/i);
+            if (skillMatch) labels.push('skill:' + skillMatch[1].toLowerCase());
+
+            labels.push('gap:open');
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: [...new Set(labels)]
+            });
+
+            const n = context.issue.number;
+            const repo = context.repo.owner + '/' + context.repo.repo;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: n,
+              body: 'Gap filed. To create a fix branch:\n```bash\ngit checkout -b fix/gap-' + n + '-<description>\ngh issue edit ' + n + ' --repo ' + repo + ' --add-label gap:in-progress --remove-label gap:open\n```'
+            });
