@@ -1,0 +1,7 @@
+{
+  "name": "web-search",
+  "version": "1.0.0",
+  "description": "Search the web using SearXNG (self-hosted metasearch — no API key needed)",
+  "license": "Apache-2.0",
+  "keywords": ["search", "web", "searxng"]
+}

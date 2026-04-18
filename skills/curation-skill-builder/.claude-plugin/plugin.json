@@ -1,0 +1,7 @@
+{
+  "name": "curation-skill-builder",
+  "version": "1.0.0",
+  "description": "Design and implement TypeDB-backed curation skills using the Skillful Alhazen 6-phase methodology",
+  "license": "Apache-2.0",
+  "keywords": ["typedb", "skill-design", "curation", "meta-skill"]
+}
