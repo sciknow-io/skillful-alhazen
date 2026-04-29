@@ -274,11 +274,39 @@ endif
 	@echo "$(GREEN)✓ Skill installed. Restart Claude Code to pick up the new skill.$(NC)"
 
 .PHONY: db-migrate
-db-migrate: ## Migrate database to new schema (export, transform, reimport)
-	@echo "$(BLUE)Running schema migration...$(NC)"
-	@echo "$(YELLOW)This will drop and recreate the database. Data is backed up first.$(NC)"
-	uv run python $(TYPEDB_SCHEMAS_DIR)/migrate_schema_v2.py migrate --export-path exports/migration_data.json
-	@echo "$(GREEN)✓ Migration complete$(NC)"
+db-migrate: ## Migrate database using schema_mapper rules (requires RULES=path/to/rules/)
+ifndef RULES
+	@echo "$(RED)Error: RULES variable required. Usage: make db-migrate RULES=local_resources/typedb/migration-rules/my-migration/$(NC)"
+	@exit 1
+endif
+	@echo "$(BLUE)Starting schema migration...$(NC)"
+	@echo "$(BLUE)Step 1: Exporting current database to backup...$(NC)"
+	@uv run python $(CLAUDE_SKILLS_DIR)/typedb-notebook/typedb_notebook.py export-db --database $(TYPEDB_DATABASE)
+	@echo "$(BLUE)Step 2: Creating backup database from export...$(NC)"
+	@LATEST=$$(ls -t $(HOME)/.alhazen/cache/typedb/$(TYPEDB_DATABASE)_export_*.zip | head -1); \
+	uv run python -c "\
+from typedb.driver import TypeDB, Credentials, DriverOptions; \
+d = TypeDB.driver('localhost:1729', Credentials('admin', 'password'), DriverOptions(is_tls_enabled=False)); \
+try: d.databases.get('alhazen_backup').delete(); \
+except: pass; \
+d.close()" 2>/dev/null; \
+	uv run python $(CLAUDE_SKILLS_DIR)/typedb-notebook/typedb_notebook.py import-db --zip "$$LATEST" --database alhazen_backup
+	@echo "$(BLUE)Step 3: Dropping and recreating target with new schema...$(NC)"
+	@uv run python -c "\
+from typedb.driver import TypeDB, Credentials, DriverOptions; \
+d = TypeDB.driver('localhost:1729', Credentials('admin', 'password'), DriverOptions(is_tls_enabled=False)); \
+d.databases.get('$(TYPEDB_DATABASE)').delete(); \
+d.close()" 2>/dev/null
+	@$(MAKE) --no-print-directory db-init
+	@echo "$(BLUE)Step 4: Running migration rules...$(NC)"
+	uv run python src/skillful_alhazen/utils/schema_mapper.py run \
+		--source-db alhazen_backup --target-db $(TYPEDB_DATABASE) --rules-dir $(RULES)
+	@echo "$(BLUE)Step 5: Reconciling...$(NC)"
+	uv run python src/skillful_alhazen/utils/schema_mapper.py reconcile \
+		--source-db alhazen_backup --target-db $(TYPEDB_DATABASE) --rules-dir $(RULES)
+	@echo "$(GREEN)✓ Migration complete. Review reconciliation above.$(NC)"
+	@echo "$(YELLOW)Backup database 'alhazen_backup' preserved. Drop manually when satisfied:$(NC)"
+	@echo "$(YELLOW)  uv run python -c \"from typedb.driver import TypeDB, Credentials, DriverOptions; d=TypeDB.driver('localhost:1729', Credentials('admin','password'), DriverOptions(is_tls_enabled=False)); d.databases.get('alhazen_backup').delete(); d.close()\"$(NC)"
 
 .PHONY: db-import
 db-import: ## Import database from zip (requires ZIP=/path/to/export.zip)
