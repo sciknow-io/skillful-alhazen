@@ -308,6 +308,54 @@ d.close()" 2>/dev/null
 	@echo "$(YELLOW)Backup database 'alhazen_backup' preserved. Drop manually when satisfied:$(NC)"
 	@echo "$(YELLOW)  uv run python -c \"from typedb.driver import TypeDB, Credentials, DriverOptions; d=TypeDB.driver('localhost:1729', Credentials('admin','password'), DriverOptions(is_tls_enabled=False)); d.databases.get('alhazen_backup').delete(); d.close()\"$(NC)"
 
+.PHONY: db-migrate-test
+db-migrate-test: ## Test migration rules against a copy (requires RULES=path/to/rules/)
+ifndef RULES
+	@echo "$(RED)Error: RULES variable required. Usage: make db-migrate-test RULES=local_resources/typedb/migration-rules/my-migration/$(NC)"
+	@exit 1
+endif
+	@echo "$(BLUE)Testing schema migration (non-destructive)...$(NC)"
+	@echo "$(BLUE)Step 1: Cloning production database...$(NC)"
+	@uv run python $(CLAUDE_SKILLS_DIR)/typedb-notebook/typedb_notebook.py export-db --database $(TYPEDB_DATABASE)
+	@LATEST=$$(ls -t $(HOME)/.alhazen/cache/typedb/$(TYPEDB_DATABASE)_export_*.zip | head -1); \
+	uv run python -c "\
+from typedb.driver import TypeDB, Credentials, DriverOptions; \
+d = TypeDB.driver('localhost:1729', Credentials('admin', 'password'), DriverOptions(is_tls_enabled=False)); \
+try: d.databases.get('alhazen_migrate_source').delete(); \
+except: pass; \
+d.close()" 2>/dev/null; \
+	uv run python $(CLAUDE_SKILLS_DIR)/typedb-notebook/typedb_notebook.py import-db --zip "$$LATEST" --database alhazen_migrate_source
+	@echo "$(BLUE)Step 2: Creating target with new schema...$(NC)"
+	@uv run python -c "\
+from typedb.driver import TypeDB, Credentials, DriverOptions; \
+d = TypeDB.driver('localhost:1729', Credentials('admin', 'password'), DriverOptions(is_tls_enabled=False)); \
+try: d.databases.get('alhazen_migrate_target').delete(); \
+except: pass; \
+d.close()" 2>/dev/null
+	@TYPEDB_DATABASE=alhazen_migrate_target $(MAKE) --no-print-directory db-init
+	@echo "$(BLUE)Step 3: Running migration rules...$(NC)"
+	@uv run python src/skillful_alhazen/utils/schema_mapper.py run \
+		--source-db alhazen_migrate_source --target-db alhazen_migrate_target --rules-dir $(RULES) \
+		2>&1 || true
+	@echo "$(BLUE)Step 4: Reconciling...$(NC)"
+	@uv run python src/skillful_alhazen/utils/schema_mapper.py reconcile \
+		--source-db alhazen_migrate_source --target-db alhazen_migrate_target --rules-dir $(RULES) \
+		2>&1 || true
+	@echo "$(GREEN)✓ Test migration complete.$(NC)"
+	@echo "$(YELLOW)Test databases preserved for inspection: alhazen_migrate_source, alhazen_migrate_target$(NC)"
+	@echo "$(YELLOW)Re-run this target after fixing rules. Clean up with: make db-migrate-test-clean$(NC)"
+
+.PHONY: db-migrate-test-clean
+db-migrate-test-clean: ## Clean up test migration databases
+	@uv run python -c "\
+from typedb.driver import TypeDB, Credentials, DriverOptions; \
+d = TypeDB.driver('localhost:1729', Credentials('admin', 'password'), DriverOptions(is_tls_enabled=False)); \
+for name in ['alhazen_migrate_source', 'alhazen_migrate_target']: \
+    try: d.databases.get(name).delete(); print(f'Deleted {name}'); \
+    except: print(f'{name} not found'); \
+d.close()" 2>/dev/null
+	@echo "$(GREEN)✓ Test databases cleaned up$(NC)"
+
 .PHONY: db-import
 db-import: ## Import database from zip (requires ZIP=/path/to/export.zip)
 ifndef ZIP
