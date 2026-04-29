@@ -823,6 +823,24 @@ When the GLAV schema_mapper approach is too complex (many entity types, unclear 
 - **Binary backup + query transfer** — best for quick migrations, exploratory schema changes, or when you have too many entity types for hand-written rules. More manual but avoids the schema_mapper's rule-writing overhead.
 - **Both together** — use binary backup as the source database for schema_mapper rules. This is what `make db-migrate` does internally.
 
+### GLAV for External Data Integration
+
+The GLAV (Global-as-View / Local-as-View) methodology behind `schema_mapper.py` is not limited to schema migration — it is a general-purpose **information integration** approach. Use it whenever external data sources need to be imported or linked into the notebook's TypeDB representation:
+
+1. **Build a temporary TypeDB image** of the external database. Load the external data into a separate TypeDB database using the source's native schema (or a minimal schema that captures its structure).
+2. **Write YAML mapping rules** that define how the external schema maps to the notebook's `alhazen_notebook.tql` entity types. Each rule is a `(source_match, target_insert)` pair with skolemization for deterministic ID generation.
+3. **Run the mapper** from the external database into `alhazen_notebook`:
+   ```bash
+   uv run python src/skillful_alhazen/utils/schema_mapper.py run \
+     --source-db external_source --target-db alhazen_notebook \
+     --rules-dir local_resources/typedb/integration-rules/external-name/
+   ```
+4. **Reconcile** to verify completeness.
+
+This is how the DisMech disease mechanism knowledge graph was originally integrated — an external dataset loaded into a temporary database, then mapped into the notebook's entity hierarchy via declarative rules. The same pattern applies to any external data source: public databases (PubMed, Monarch, ChEMBL), partner data exports, or API-harvested datasets.
+
+**Key principle:** The notebook schema (`alhazen_notebook.tql` + skill schemas) is the **global schema** — the single integrated view. External sources are **local schemas** that get mapped into it. The mapping rules are the explicit, auditable bridge between them.
+
 ## Team Conventions
 
 When Claude makes a mistake, add it to this section so it doesn't happen again.
