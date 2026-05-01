@@ -845,6 +845,26 @@ This is how the DisMech disease mechanism knowledge graph was originally integra
 
 When Claude makes a mistake, add it to this section so it doesn't happen again.
 
+### Data Quality Audit Process
+
+Skills can define data quality checks in `quality-checks.yaml` (declarative TypeQL queries with root cause analysis). The audit runner executes these and files structured GitHub issues. The fix cycle is:
+
+1. **Run audit**: `uv run python src/skillful_alhazen/utils/audit_runner.py run --checks local_skills/<skill>/quality-checks.yaml`
+2. **File issues**: Add `--file-issues` to create GitHub issues on the skill's repo with full improvement records (finding, data fix, root cause, prevention fix, verification test)
+3. **Plan the fix**: Read the issue, create a branch, write an implementation plan. **Record the plan as a comment on the issue** so it's visible in the PR trail:
+   ```bash
+   gh issue comment <number> --repo <repo> --body "## Implementation Plan\n..."
+   ```
+4. **Implement**: Fix the root cause (code/schema/prompt change) + write a one-off data repair script if needed
+5. **Verify**: Re-run the audit — the finding should disappear or improve
+6. **PR**: Create a PR linking the issue. The PR documents: the code fix, before/after audit comparison, and closes the issue
+   ```bash
+   gh pr create --title "fix: <issue title>" --body "Fixes #<number>\n\n## Before\n<audit output>\n\n## After\n<audit output>"
+   ```
+7. **Close**: Merge PR → issue auto-closes
+
+**Every fix must address the root cause**, not just repair the data. The issue's `Prevention Fix` section specifies what code/prompt/convention change prevents recurrence. The `Verification Test` section specifies how to confirm the root cause is fixed.
+
 ### Schema Gap Reporting
 
 A **schema gap** is when Claude tries to represent a concept, relationship, or entity type that has no place in the current TypeDB schema. Schema gaps are the primary signal for knowledge graph evolution — they reveal what the schema needs to grow to support.
